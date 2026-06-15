@@ -588,7 +588,7 @@ class JobApplicationAI:
             role = "the role"
             self.role_var.set(role)
         if not location:
-            location = "Remote"
+            location = ""
             self.location_var.set(location)
 
         if self.doc_editor is None:

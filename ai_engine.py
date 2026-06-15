@@ -98,8 +98,7 @@ PROVIDERS: dict[str, dict] = {
         "config_key": "groq_api_key",
         "type":       "openai_compat",
         "base_url":   "https://api.groq.com/openai/v1",
-    },
-}
+    }
 
 # Ordered list used for UI display
 PROVIDER_ORDER: list[str] = ["claude", "gemini", "gpt", "grok", "llama", "groq"]
@@ -110,13 +109,14 @@ PROVIDER_ORDER: list[str] = ["claude", "gemini", "gpt", "grok", "llama", "groq"]
 
 SYSTEM_PROMPT = (
     "You are a job application assistant. Extract job information from the provided job circular. "
+    "The circular may be in English, Bengali, or use short forms. Always output professional English values.\n"
     "Return ONLY valid JSON with these exact fields, nothing else:\n"
     '{"job_title": "", "company_name": "", "role": "", "location": ""}\n\n'
     "Where:\n"
-    "- job_title: A resume heading suitable for this position (e.g. 'Senior Software Engineer'). If missing, use 'the position'.\n"
-    "- company_name: The employer/company name exactly as written. If missing, use 'your company'.\n"
-    "- role: The actual position/role name (e.g. 'Backend Developer'). If missing, use 'the role'.\n"
-    "- location: The job location. If missing, use 'Remote'.\n\n"
+    "- job_title: A professional English resume heading for this position. If missing, use 'the position'.\n"
+    "- company_name: The employer/company name (translate to English if needed). If missing, use 'your company'.\n"
+    "- role: The professional English position/role name. If missing, use 'the role'.\n"
+    "- location: The job location. If missing, use ''.\n\n"
     "Return ONLY the JSON object. No markdown fences, no explanation, no extra text."
 )
 
@@ -329,7 +329,7 @@ class AIEngine:
                 f"AI returned invalid JSON.\nRaw: {text!r}\nError: {e}"
             )
 
-        required = ["job_title", "company_name", "role"]
+        required = ["job_title", "company_name", "role", "location"]
         missing  = [f for f in required if f not in data]
         if missing:
             raise AIResponseError(
