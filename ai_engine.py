@@ -90,10 +90,19 @@ PROVIDERS: dict[str, dict] = {
         "type":       "openai_compat",
         "base_url":   "https://api.groq.com/openai/v1",
     },
+    "groq": {
+        "name":       "Groq",
+        "label":      "Groq",
+        "emoji":      "🚀",
+        "model":      "mixtral-8x7b-32768",
+        "config_key": "groq_api_key",
+        "type":       "openai_compat",
+        "base_url":   "https://api.groq.com/openai/v1",
+    },
 }
 
 # Ordered list used for UI display
-PROVIDER_ORDER: list[str] = ["claude", "gemini", "gpt", "grok", "llama"]
+PROVIDER_ORDER: list[str] = ["claude", "gemini", "gpt", "grok", "llama", "groq"]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared system prompt
