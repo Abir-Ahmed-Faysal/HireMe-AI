@@ -189,15 +189,10 @@ class DocEditor:
 
     def _assert_placeholders(self, doc: Document, placeholders: list[str], filename: str) -> None:
         """
-        Raise ValueError if any required placeholder is absent from *doc*.
+        We relax strict placeholder checks to support user-provided custom templates
+        which may use alternative placeholders like [Company Name].
         """
-        full_text = _document_full_text(doc)
-        missing = [p for p in placeholders if p not in full_text]
-        if missing:
-            raise ValueError(
-                f"Placeholder(s) {missing} not found in '{filename}'.\n"
-                "Make sure the template contains the exact placeholder text."
-            )
+        pass
 
     # ------------------------------------------------------------------
     # Public API
@@ -226,7 +221,10 @@ class DocEditor:
         try:
             doc = Document(str(self.resume_template))
             self._assert_placeholders(doc, self.RESUME_PLACEHOLDERS, "resume.docx")
-            _replace_in_document(doc, {"{{JOB_TITLE}}": job_title})
+            _replace_in_document(doc, {
+                "{{JOB_TITLE}}": job_title,
+                "[Job Title]": job_title,
+            })
             doc.save(output_path)
             return output_path
         except (FileNotFoundError, ValueError):
@@ -234,13 +232,14 @@ class DocEditor:
         except Exception as e:
             raise Exception(f"Error editing resume.docx: {e}") from e
 
-    def edit_cv(self, company_name: str, role: str, output_path: str) -> str:
+    def edit_cv(self, company_name: str, role: str, location: str, output_path: str) -> str:
         """
-        Copy CV template to *output_path* with {{COMPANY_NAME}} and {{ROLE}} replaced.
+        Copy CV template to *output_path* with placeholders replaced.
 
         Args:
-            company_name: Value to substitute for {{COMPANY_NAME}}.
-            role:         Value to substitute for {{ROLE}}.
+            company_name: Value to substitute for {{COMPANY_NAME}} or [Company Name].
+            role:         Value to substitute for {{ROLE}} or [Position Name].
+            location:     Value to substitute for {{LOCATION}} or [Company Address or Remote].
             output_path:  Destination path for the modified DOCX.
 
         Returns:
@@ -256,13 +255,23 @@ class DocEditor:
                 f"cv.docx not found at: {self.cv_template}"
             )
         try:
+            import datetime
+            current_date = datetime.datetime.now().strftime("%B %d, %Y")
+            
             doc = Document(str(self.cv_template))
             self._assert_placeholders(doc, self.CV_PLACEHOLDERS, "cv.docx")
             _replace_in_document(
                 doc,
                 {
                     "{{COMPANY_NAME}}": company_name,
+                    "[Company Name]": company_name,
                     "{{ROLE}}": role,
+                    "[Position Name]": role,
+                    "{{LOCATION}}": location,
+                    "[Company Address or Remote]": location,
+                    "{{DATE}}": current_date,
+                    "[Date]": current_date,
+                    "April 25, 2026": current_date,
                 },
             )
             doc.save(output_path)

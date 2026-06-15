@@ -342,11 +342,13 @@ class JobApplicationAI:
         self.job_title_var   = tk.StringVar()
         self.company_name_var = tk.StringVar()
         self.role_var         = tk.StringVar()
+        self.location_var     = tk.StringVar()
 
         fields = [
             ("Job Title",    self.job_title_var,    "Suitable heading for your resume"),
             ("Company Name", self.company_name_var, "Employer / organisation name"),
             ("Role",         self.role_var,         "Exact position being applied for"),
+            ("Location",     self.location_var,     "Job location or 'Remote'"),
         ]
 
         body = tk.Frame(card, bg=SURFACE)
@@ -566,26 +568,28 @@ class JobApplicationAI:
         self.job_title_var.set(details.get("job_title", ""))
         self.company_name_var.set(details.get("company_name", ""))
         self.role_var.set(details.get("role", ""))
+        self.location_var.set(details.get("location", ""))
 
     def _on_generate_pdfs(self) -> None:
         """Edit DOCX templates and convert to PDF."""
         job_title    = self.job_title_var.get().strip()
         company_name = self.company_name_var.get().strip()
         role         = self.role_var.get().strip()
+        location     = self.location_var.get().strip()
 
-        # Validate fields
-        missing = []
-        if not job_title:    missing.append("Job Title")
-        if not company_name: missing.append("Company Name")
-        if not role:         missing.append("Role")
-
-        if missing:
-            messagebox.showwarning(
-                "HireMe AI",
-                f"Please fill in: {', '.join(missing)}\n\n"
-                "Run Analyze first or enter the details manually.",
-            )
-            return
+        # Handle missing fields with fallbacks
+        if not job_title:
+            job_title = "the position"
+            self.job_title_var.set(job_title)
+        if not company_name:
+            company_name = "your company"
+            self.company_name_var.set(company_name)
+        if not role:
+            role = "the role"
+            self.role_var.set(role)
+        if not location:
+            location = "Remote"
+            self.location_var.set(location)
 
         if self.doc_editor is None:
             messagebox.showerror(
@@ -630,7 +634,7 @@ class JobApplicationAI:
                     "Step 1 / 3 — Editing DOCX templates…", color=ACCENT
                 ))
                 self.doc_editor.edit_resume(job_title, str(resume_tmp))
-                self.doc_editor.edit_cv(company_name, role, str(cv_tmp))
+                self.doc_editor.edit_cv(company_name, role, location, str(cv_tmp))
 
                 # Step 2 — Convert to PDF
                 self.root.after(0, lambda: self._set_status(

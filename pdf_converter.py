@@ -194,6 +194,14 @@ class PDFConverter:
 
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # ---- Clear previous files in output directory ----
+        for item in out_dir.iterdir():
+            if item.is_file():
+                try:
+                    item.unlink()
+                except OSError:
+                    pass
+
         # ---- Convert ----
         resume_pdf_tmp = self._convert_single(resume_docx_path, out_dir)
         cv_pdf_tmp = self._convert_single(cv_docx_path, out_dir)

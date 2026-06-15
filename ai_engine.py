@@ -102,11 +102,12 @@ PROVIDER_ORDER: list[str] = ["claude", "gemini", "gpt", "grok", "llama"]
 SYSTEM_PROMPT = (
     "You are a job application assistant. Extract job information from the provided job circular. "
     "Return ONLY valid JSON with these exact fields, nothing else:\n"
-    '{"job_title": "", "company_name": "", "role": ""}\n\n'
+    '{"job_title": "", "company_name": "", "role": "", "location": ""}\n\n'
     "Where:\n"
-    "- job_title: A resume heading suitable for this position (e.g. 'Senior Software Engineer')\n"
-    "- company_name: The employer/company name exactly as written\n"
-    "- role: The actual position/role name (e.g. 'Backend Developer')\n\n"
+    "- job_title: A resume heading suitable for this position (e.g. 'Senior Software Engineer'). If missing, use 'the position'.\n"
+    "- company_name: The employer/company name exactly as written. If missing, use 'your company'.\n"
+    "- role: The actual position/role name (e.g. 'Backend Developer'). If missing, use 'the role'.\n"
+    "- location: The job location. If missing, use 'Remote'.\n\n"
     "Return ONLY the JSON object. No markdown fences, no explanation, no extra text."
 )
 

@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  build.bat — Build JobApplicationAI.exe with PyInstaller
+REM  build.bat — Build HireMe_AI.exe with PyInstaller
 REM  Usage: double-click or run from a Command Prompt in this
 REM         directory after installing dependencies.
 REM ============================================================
@@ -16,7 +16,7 @@ python --version >nul 2>&1
 if errorlevel 1 (
     echo ERROR: Python not found in PATH.
     echo        Install Python 3.10+ and add it to PATH.
-    pause
+    echo.
     exit /b 1
 )
 
@@ -25,7 +25,7 @@ echo [1/3]  Installing Python dependencies...
 pip install -r requirements.txt --quiet
 if errorlevel 1 (
     echo ERROR: pip install failed. See above for details.
-    pause
+    echo.
     exit /b 1
 )
 echo        Done.
@@ -41,27 +41,27 @@ echo.
 
 REM -- Build the EXE
 echo [3/3]  Building EXE with PyInstaller...
-pyinstaller ^
+python -m PyInstaller ^
     --onefile ^
     --windowed ^
-    --name JobApplicationAI ^
+    --name HireMe_AI ^
     --add-data "config.json;." ^
     main.py
 
 if errorlevel 1 (
     echo.
     echo ERROR: PyInstaller build failed. See above for details.
-    pause
+    echo.
     exit /b 1
 )
 
 echo.
 echo =====================================================
 echo   Build complete!
-echo   EXE location: dist\JobApplicationAI.exe
+echo   EXE location: dist\HireMe_AI.exe
 echo =====================================================
 echo.
 echo IMPORTANT: Copy config.json next to the EXE before
 echo            distributing or running on a new machine.
 echo.
-pause
+echo.
