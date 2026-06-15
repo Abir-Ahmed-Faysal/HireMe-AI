@@ -94,7 +94,7 @@ PROVIDERS: dict[str, dict] = {
         "name":       "Groq",
         "label":      "Groq",
         "emoji":      "🚀",
-        "model":      "mixtral-8x7b-32768",
+        "model":      "gemma2-9b-it",
         "config_key": "groq_api_key",
         "type":       "openai_compat",
         "base_url":   "https://api.groq.com/openai/v1",
