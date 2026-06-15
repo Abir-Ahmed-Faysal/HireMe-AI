@@ -99,6 +99,7 @@ PROVIDERS: dict[str, dict] = {
         "type":       "openai_compat",
         "base_url":   "https://api.groq.com/openai/v1",
     }
+}
 
 # Ordered list used for UI display
 PROVIDER_ORDER: list[str] = ["claude", "gemini", "gpt", "grok", "llama", "groq"]
