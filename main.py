@@ -235,10 +235,41 @@ class JobApplicationAI:
 
         self._build_circular_section(left)
 
-        # ── Right column (details + actions) ────────────────────────────
-        right = tk.Frame(outer, bg=BG, width=320)
-        right.pack(side=tk.RIGHT, fill=tk.Y)
-        right.pack_propagate(False)
+        # ── Right column (details + actions) — scrollable ───────────────
+        right_outer = tk.Frame(outer, bg=BG, width=320)
+        right_outer.pack(side=tk.RIGHT, fill=tk.Y)
+        right_outer.pack_propagate(False)
+
+        # Scrollable canvas so content is reachable at any window height
+        right_canvas = tk.Canvas(
+            right_outer, bg=BG, bd=0, highlightthickness=0, width=320
+        )
+        right_scroll = tk.Scrollbar(
+            right_outer, orient=tk.VERTICAL, command=right_canvas.yview
+        )
+        right_canvas.configure(yscrollcommand=right_scroll.set)
+
+        right_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        right_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        right = tk.Frame(right_canvas, bg=BG)
+        right_window = right_canvas.create_window((0, 0), window=right, anchor="nw")
+
+        def _on_right_configure(event):
+            right_canvas.configure(scrollregion=right_canvas.bbox("all"))
+            right_canvas.itemconfig(right_window, width=right_canvas.winfo_width())
+
+        def _on_canvas_resize(event):
+            right_canvas.itemconfig(right_window, width=event.width)
+
+        right.bind("<Configure>", _on_right_configure)
+        right_canvas.bind("<Configure>", _on_canvas_resize)
+
+        # Mouse-wheel scrolling when cursor is over the right panel
+        def _on_mousewheel(event):
+            right_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        right_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         self._build_details_section(right)
         self._build_action_buttons(right)
@@ -339,13 +370,15 @@ class JobApplicationAI:
         card = self._make_card(parent, "📝  Extracted Job Details")
         card.pack(fill=tk.X, pady=(0, 10))
 
-        self.job_title_var   = tk.StringVar()
+        self.job_title_var    = tk.StringVar()
+        self.tech_stack_var   = tk.StringVar()
         self.company_name_var = tk.StringVar()
         self.role_var         = tk.StringVar()
         self.location_var     = tk.StringVar()
 
         fields = [
-            ("Job Title",    self.job_title_var,    "Suitable heading for your resume"),
+            ("Job Title",    self.job_title_var,    "Role title from job circular (e.g. Full Stack Developer)"),
+            ("Tech Stack",   self.tech_stack_var,   "Key technologies for this role (e.g. Next.js · Node.js · PostgreSQL)"),
             ("Company Name", self.company_name_var, "Employer / organisation name"),
             ("Role",         self.role_var,         "Exact position being applied for"),
             ("Location",     self.location_var,     "Job location or 'Remote'"),
@@ -387,6 +420,48 @@ class JobApplicationAI:
                 font=("Segoe UI", 7, "italic"),
                 anchor="w",
             ).pack(fill=tk.X, pady=(2, 0))
+
+        # Live preview of the formatted headline
+        preview_frame = tk.Frame(body, bg=SURFACE)
+        preview_frame.pack(fill=tk.X, pady=(14, 0))
+
+        tk.Label(
+            preview_frame,
+            text="HEADLINE PREVIEW",
+            bg=SURFACE,
+            fg=SUBTEXT,
+            font=("Segoe UI", 7, "bold"),
+            anchor="w",
+        ).pack(fill=tk.X, pady=(0, 4))
+
+        self._headline_preview = tk.Label(
+            preview_frame,
+            text="—",
+            bg=SURFACE2,
+            fg=ACCENT,
+            font=("Segoe UI", 9, "bold"),
+            anchor="w",
+            padx=10,
+            pady=6,
+        )
+        self._headline_preview.pack(fill=tk.X)
+
+        # Update preview whenever job_title or tech_stack changes
+        def _update_preview(*_):
+            title = self.job_title_var.get().strip()
+            stack = self.tech_stack_var.get().strip()
+            title_lower = title.lower()
+            use_stack = any(r in title_lower for r in self._TECH_STACK_ROLES)
+            if title and stack and use_stack:
+                preview = f"{title}  |  {stack}"
+            elif title:
+                preview = title
+            else:
+                preview = "—"
+            self._headline_preview.config(text=preview)
+
+        self.job_title_var.trace_add("write", _update_preview)
+        self.tech_stack_var.trace_add("write", _update_preview)
 
     # ── Action buttons ─────────────────────────────────────────────────
 
@@ -563,9 +638,36 @@ class JobApplicationAI:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    # Roles where "Title  |  Tech Stack" headline format is used.
+    # All other roles get a plain title without the tech stack suffix.
+    _TECH_STACK_ROLES = {
+        "full stack developer",
+        "full-stack developer",
+        "fullstack developer",
+        "frontend developer",
+        "front end developer",
+        "front-end developer",
+    }
+
     def _populate_fields(self, details: dict) -> None:
-        """Fill the three editable fields from the extracted details dict."""
-        self.job_title_var.set(details.get("job_title", ""))
+        """Fill the editable fields from the extracted details dict.
+
+        For Full Stack Developer and Frontend Developer roles the headline is:
+            <job_title>  |  <tech_stack>
+        For all other roles (Software Engineer, Backend Dev, MERN Stack, etc.)
+        the plain job title is used without a tech stack suffix.
+        """
+        raw_title = details.get("job_title", "").strip()
+        tech      = details.get("tech_stack", "").strip()
+
+        # Only append tech stack for the two supported role types
+        title_lower = raw_title.lower()
+        use_stack = any(role in title_lower for role in self._TECH_STACK_ROLES)
+
+        formatted_title = f"{raw_title}  |  {tech}" if (use_stack and tech) else raw_title
+
+        self.job_title_var.set(formatted_title)
+        self.tech_stack_var.set(tech)
         self.company_name_var.set(details.get("company_name", ""))
         self.role_var.set(details.get("role", ""))
         self.location_var.set(details.get("location", ""))
@@ -579,7 +681,7 @@ class JobApplicationAI:
 
         # Handle missing fields with fallbacks
         if not job_title:
-            job_title = "the position"
+            job_title = role if role else "Software Developer"
             self.job_title_var.set(job_title)
         if not company_name:
             company_name = "your company"
@@ -633,8 +735,8 @@ class JobApplicationAI:
                 self.root.after(0, lambda: self._set_status(
                     "Step 1 / 3 — Editing DOCX templates…", color=ACCENT
                 ))
-                self.doc_editor.edit_resume(job_title, str(resume_tmp))
-                self.doc_editor.edit_cv(company_name, role, location, str(cv_tmp))
+                self.doc_editor.edit_resume(job_title, str(resume_tmp), role=role)
+                self.doc_editor.edit_cv(company_name, role, location, str(cv_tmp), job_title=job_title)
 
                 # Step 2 — Convert to PDF
                 self.root.after(0, lambda: self._set_status(
@@ -645,6 +747,7 @@ class JobApplicationAI:
                     str(cv_tmp),
                     safe_company,
                     output_folder,
+                    role=role,
                 )
 
                 # Step 3 — Done

@@ -3,14 +3,19 @@ doc_editor.py
 DOCX template editing with placeholder replacement.
 
 Rules (strict):
-  - resume.docx : replace ONLY {{JOB_TITLE}}
-  - cv.docx     : replace ONLY {{COMPANY_NAME}} and {{ROLE}}
+  - resume.docx : replace {{JOB_TITLE}} (and [Job Title] / literal job title text as fallback)
+  - cv.docx     : replace {{COMPANY_NAME}}, {{ROLE}}, {{JOB_TITLE}} (header), and {{LOCATION}}
   - All other content (formatting, styles, fonts, colours) must be 100% preserved.
 
 The replacement algorithm works at the Run level so bold/italic/font/size
 on the replaced run is preserved. It also handles the common Word behaviour
 where a single placeholder is split across multiple consecutive runs
 (e.g. "{{JOB" in run-0 and "_TITLE}}" in run-1).
+
+Fallback behaviour:
+  If no standard placeholder ({{JOB_TITLE}} / [Job Title]) is found, the editor
+  attempts to replace any known literal job title text (e.g. "Full Stack Developer")
+  so that user-provided templates that never had a placeholder are still supported.
 """
 
 from pathlib import Path
@@ -103,9 +108,54 @@ def _replace_in_paragraph(para, replacements: dict) -> None:
         _replace_in_runs(para.runs, old, new)
 
 
+def _iter_text_box_paragraphs(doc_or_header):
+    """
+    Yield every paragraph found inside text boxes (``w:txbxContent`` elements).
+
+    Word stores floating text boxes as drawing objects whose XML looks like::
+
+        <w:drawing>
+          <wp:inline or wp:anchor>
+            <a:graphic>
+              <a:graphicData>
+                <wps:txbx>
+                  <w:txbxContent>
+                    <w:p> … </w:p>
+                  </w:txbxContent>
+                </wps:txbx>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+
+    python-docx does not expose these through its high-level API, so we
+    descend into the raw XML.
+
+    Accepts both ``Document`` objects (which expose ``.element``) and
+    header/footer objects (``_Header`` / ``_Footer``, which expose
+    ``._element``).
+    """
+    from docx.text.paragraph import Paragraph as _Paragraph
+
+    # Namespace for the WordprocessingML schema
+    W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    txbx_tag = f"{{{W_NS}}}txbxContent"
+    p_tag    = f"{{{W_NS}}}p"
+
+    # Document exposes .element; _Header/_Footer expose ._element
+    root_elem = getattr(doc_or_header, "element", None) or getattr(doc_or_header, "_element", None)
+    if root_elem is None:
+        return
+
+    for txbx_elem in root_elem.iter(txbx_tag):
+        for p_elem in txbx_elem.iter(p_tag):
+            yield _Paragraph(p_elem, None)
+
+
 def _replace_in_document(doc: Document, replacements: dict) -> None:
     """
-    Walk every paragraph and table cell in the document and apply replacements.
+    Walk every paragraph, table cell, header/footer, and text box in the
+    document and apply replacements.
     Does NOT touch any other XML; formatting is fully preserved.
     """
     # Body paragraphs
@@ -125,14 +175,23 @@ def _replace_in_document(doc: Document, replacements: dict) -> None:
             if header is not None:
                 for para in header.paragraphs:
                     _replace_in_paragraph(para, replacements)
+                # Also cover text boxes inside headers
+                for para in _iter_text_box_paragraphs(header):
+                    _replace_in_paragraph(para, replacements)
         for footer in (section.footer, section.first_page_footer, section.even_page_footer):
             if footer is not None:
                 for para in footer.paragraphs:
                     _replace_in_paragraph(para, replacements)
+                for para in _iter_text_box_paragraphs(footer):
+                    _replace_in_paragraph(para, replacements)
+
+    # Floating text boxes in the body
+    for para in _iter_text_box_paragraphs(doc):
+        _replace_in_paragraph(para, replacements)
 
 
 def _document_full_text(doc: Document) -> str:
-    """Return all text in the document for placeholder detection."""
+    """Return all text in the document for placeholder detection (incl. text boxes)."""
     parts = []
     for para in doc.paragraphs:
         parts.append(para.text)
@@ -141,12 +200,90 @@ def _document_full_text(doc: Document) -> str:
             for cell in row.cells:
                 for para in cell.paragraphs:
                     parts.append(para.text)
+    for para in _iter_text_box_paragraphs(doc):
+        parts.append(para.text)
     return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
 # DocEditor
 # ---------------------------------------------------------------------------
+
+# Base job-title keywords we look for in the document text.
+# The scanner will match these even if the template has a " | tech stack"
+# suffix appended (e.g. "Full Stack Developer | Next.js · Node.js · PostgreSQL").
+_KNOWN_JOB_TITLE_BASES = [
+    "Full Stack Developer",
+    "Fullstack Developer",
+    "Full-Stack Developer",
+    "Software Engineer",
+    "Backend Developer",
+    "Frontend Developer",
+    "Front-End Developer",
+    "Web Developer",
+    "Mobile Developer",
+    "Data Scientist",
+    "Data Analyst",
+    "DevOps Engineer",
+    "Product Manager",
+    "Project Manager",
+    "UI/UX Designer",
+    "Graphic Designer",
+    "Business Analyst",
+    "QA Engineer",
+    "Machine Learning Engineer",
+    "Cybersecurity Analyst",
+    "Cloud Engineer",
+    "Systems Administrator",
+    "Network Engineer",
+    "Technical Writer",
+    "MERN Stack Developer",
+    "Backend Engineer",
+    "Frontend Engineer",
+]
+
+
+def _build_literal_replacements(
+    doc_text: str,
+    new_title: str,
+    extra_candidates: list[str] | None = None,
+) -> dict:
+    """
+    Scan *doc_text* for any known job-title literal (including variants with
+    a " | tech stack" suffix such as "Full Stack Developer | Next.js · Node.js"),
+    plus any *extra_candidates* supplied by the caller (e.g. the raw role and
+    job_title from the UI fields).
+
+    Return a dict mapping the exact matched string -> *new_title*.
+
+    This is the primary fallback when the template has no formal
+    ``{{JOB_TITLE}}`` placeholder, or when the current title in the template
+    is not on the built-in list.
+    """
+    # Combine built-in bases with any extra candidates the caller supplied.
+    all_bases = list(_KNOWN_JOB_TITLE_BASES)
+    for cand in (extra_candidates or []):
+        cand = cand.strip()
+        if cand and cand not in all_bases:
+            all_bases.append(cand)
+
+    replacements = {}
+    for base in all_bases:
+        # Case-insensitive search for the base title in the document text.
+        # We want to capture the full line/phrase including any " | ..." suffix.
+        # Use regex: match the base (case-insensitive) optionally followed by
+        # " | " and non-newline characters.
+        pattern = re.compile(
+            re.escape(base) + r"(?:\s*[|\u00b7·]\s*[^\n]*)?",
+            re.IGNORECASE,
+        )
+        for m in pattern.finditer(doc_text):
+            matched = m.group(0).strip()
+            # Avoid replacing if the matched text is already the desired title
+            if matched and matched != new_title:
+                replacements[matched] = new_title
+    return replacements
+
 
 class DocEditor:
     """Edits DOCX templates by replacing designated placeholders only."""
@@ -198,20 +335,36 @@ class DocEditor:
     # Public API
     # ------------------------------------------------------------------
 
-    def edit_resume(self, job_title: str, output_path: str) -> str:
+    def edit_resume(self, job_title: str, output_path: str, role: str = "") -> str:
         """
-        Copy resume template to *output_path* with {{JOB_TITLE}} replaced.
+        Copy resume template to *output_path* with {{JOB_TITLE}} replaced
+        everywhere — including inside floating text boxes.
+
+        Replacement targets (in priority order):
+          1. ``{{JOB_TITLE}}`` and ``[Job Title]`` formal placeholders.
+          2. The literal *role* string (the raw role from the job circular),
+             including any " | tech stack" suffix variant found in the doc.
+          3. The literal *job_title* string and any known base title from the
+             built-in list (including " | tech stack" suffix variants).
+
+        This means every occurrence of the old professional headline —
+        whether in the body, a text box, a header, or a table cell — is
+        updated to the new title.
 
         Args:
-            job_title:   Value to substitute for {{JOB_TITLE}}.
+            job_title:   Formatted title to write (e.g. "Full Stack Developer"
+                         or "Full Stack Developer  |  Next.js · Node.js").
             output_path: Destination path for the modified DOCX.
+            role:        Raw role from the job circular (e.g. "Full Stack
+                         Developer"). Used as an additional literal search
+                         target so templates that already contain the raw role
+                         text are also updated.
 
         Returns:
             output_path (str)
 
         Raises:
             FileNotFoundError: Template file missing.
-            ValueError: Placeholder not present in the template.
             Exception: Any other docx / IO error.
         """
         if not self.resume_template.exists():
@@ -221,10 +374,27 @@ class DocEditor:
         try:
             doc = Document(str(self.resume_template))
             self._assert_placeholders(doc, self.RESUME_PLACEHOLDERS, "resume.docx")
-            _replace_in_document(doc, {
+
+            # Build replacement map — standard placeholders first
+            replacements = {
                 "{{JOB_TITLE}}": job_title,
                 "[Job Title]": job_title,
-            })
+            }
+
+            # Collect extra candidate strings: the raw role and the formatted
+            # job_title are both added as literal search targets so that any
+            # template text matching either will be replaced.
+            extra = [s for s in (role.strip(), job_title.strip()) if s]
+
+            # Fallback: find any known (and extra-candidate) literal job-title
+            # text in the document (including " | tech stack" suffix) and
+            # replace it.  Text boxes are included via _document_full_text.
+            doc_text = _document_full_text(doc)
+            replacements.update(
+                _build_literal_replacements(doc_text, job_title, extra_candidates=extra)
+            )
+
+            _replace_in_document(doc, replacements)
             doc.save(output_path)
             return output_path
         except (FileNotFoundError, ValueError):
@@ -232,15 +402,28 @@ class DocEditor:
         except Exception as e:
             raise Exception(f"Error editing resume.docx: {e}") from e
 
-    def edit_cv(self, company_name: str, role: str, location: str, output_path: str) -> str:
+    def edit_cv(
+        self,
+        company_name: str,
+        role: str,
+        location: str,
+        output_path: str,
+        job_title: str = "",
+    ) -> str:
         """
         Copy CV template to *output_path* with placeholders replaced.
+
+        Also replaces {{JOB_TITLE}} / [Job Title] in the CV header so that
+        cover-letter templates that echo the applicant's professional title
+        are kept in sync with the resume.
 
         Args:
             company_name: Value to substitute for {{COMPANY_NAME}} or [Company Name].
             role:         Value to substitute for {{ROLE}} or [Position Name].
             location:     Value to substitute for {{LOCATION}} or [Company Address or Remote].
             output_path:  Destination path for the modified DOCX.
+            job_title:    Value to substitute for {{JOB_TITLE}} / [Job Title] in the CV
+                          header.  Defaults to *role* when not supplied.
 
         Returns:
             output_path (str)
@@ -257,23 +440,42 @@ class DocEditor:
         try:
             import datetime
             current_date = datetime.datetime.now().strftime("%B %d, %Y")
-            
+
+            # Use role as fallback if no explicit job_title was provided
+            effective_job_title = job_title.strip() if job_title.strip() else role
+
             doc = Document(str(self.cv_template))
             self._assert_placeholders(doc, self.CV_PLACEHOLDERS, "cv.docx")
-            _replace_in_document(
-                doc,
-                {
-                    "{{COMPANY_NAME}}": company_name,
-                    "[Company Name]": company_name,
-                    "{{ROLE}}": role,
-                    "[Position Name]": role,
-                    "{{LOCATION}}": location,
-                    "[Company Address or Remote]": location,
-                    "{{DATE}}": current_date,
-                    "[Date]": current_date,
-                    "April 25, 2026": current_date,
-                },
+
+            # Build replacement map
+            replacements = {
+                "{{COMPANY_NAME}}": company_name,
+                "[Company Name]": company_name,
+                "{{ROLE}}": role,
+                "[Position Name]": role,
+                "{{LOCATION}}": location,
+                "[Company Address or Remote]": location,
+                "{{DATE}}": current_date,
+                "[Date]": current_date,
+                "April 25, 2026": current_date,
+                # Job title placeholders in the CV header
+                "{{JOB_TITLE}}": effective_job_title,
+                "[Job Title]": effective_job_title,
+            }
+
+            # Collect extra candidate strings: the raw role and the formatted
+            # job_title so that any template text matching either is replaced.
+            extra = [s for s in (role.strip(), job_title.strip(), effective_job_title.strip()) if s]
+
+            # Fallback: find any known (and extra-candidate) literal job-title
+            # text in the document (incl. text boxes and " | tech stack" suffix)
+            # and replace it.
+            doc_text = _document_full_text(doc)
+            replacements.update(
+                _build_literal_replacements(doc_text, effective_job_title, extra_candidates=extra)
             )
+
+            _replace_in_document(doc, replacements)
             doc.save(output_path)
             return output_path
         except (FileNotFoundError, ValueError):

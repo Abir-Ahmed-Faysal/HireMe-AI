@@ -112,12 +112,19 @@ SYSTEM_PROMPT = (
     "You are a job application assistant. Extract job information from the provided job circular. "
     "The circular may be in English, Bengali, or use short forms. Always output professional English values.\n"
     "Return ONLY valid JSON with these exact fields, nothing else:\n"
-    '{"job_title": "", "company_name": "", "role": "", "location": ""}\n\n'
+    '{"job_title": "", "company_name": "", "role": "", "location": "", "tech_stack": ""}\n\n'
     "Where:\n"
-    "- job_title: A professional English resume heading for this position. If missing, use 'the position'.\n"
+    "- job_title: The professional English job title exactly as the employer wants it (e.g. 'Full Stack Developer', "
+    "'Frontend Developer', 'Backend Engineer', 'Product Manager'). Mirror the employer's wording precisely. "
+    "If missing, use 'Software Developer'.\n"
     "- company_name: The employer/company name (translate to English if needed). If missing, use 'your company'.\n"
-    "- role: The professional English position/role name. If missing, use 'the role'.\n"
-    "- location: The job location. If missing, use ''.\n\n"
+    "- role: Same as job_title (the exact position being applied for).\n"
+    "- location: The job location. If missing, use ''.\n"
+    "- tech_stack: A short list (2–4 items) of the most important technologies/skills the job requires, "
+    "separated by ' · ' (space-dot-space). Choose the most recognisable ones from the circular "
+    "(e.g. 'Next.js · Node.js · PostgreSQL' or 'React · TypeScript · REST APIs'). "
+    "If no specific tech is mentioned, derive sensible defaults from the role "
+    "(e.g. for Frontend Developer: 'React · TypeScript · CSS'). Never leave empty.\n\n"
     "Return ONLY the JSON object. No markdown fences, no explanation, no extra text."
 )
 
@@ -330,7 +337,7 @@ class AIEngine:
                 f"AI returned invalid JSON.\nRaw: {text!r}\nError: {e}"
             )
 
-        required = ["job_title", "company_name", "role", "location"]
+        required = ["job_title", "company_name", "role", "location", "tech_stack"]
         missing  = [f for f in required if f not in data]
         if missing:
             raise AIResponseError(

@@ -3,8 +3,11 @@ pdf_converter.py
 Convert DOCX files to PDF using LibreOffice headless mode.
 
 Output filenames:
-  Resume_<CompanyName>.pdf
-  CV_<CompanyName>.pdf
+  Faysal's_Ahmed_Resume_<Role>.pdf
+  Faysal_Ahmed's_CoverLetter_<Role>.pdf
+
+Where <Role> is the applied-for role with spaces replaced by underscores
+(e.g. "Full Stack Developer" → "Full_Stack_Developer").
 
 Temporary DOCX files are deleted after successful conversion.
 """
@@ -164,17 +167,28 @@ class PDFConverter:
         cv_docx: str,
         company_name: str,
         output_folder: str,
+        role: str = "",
     ) -> tuple[Path, Path]:
         """
-        Convert both DOCX files to PDFs and rename them by company name.
+        Convert both DOCX files to PDFs and rename them using the personal
+        name + role convention:
+
+            Faysal's_Ahmed_Resume_<Role>.pdf
+            Faysal_Ahmed's_CoverLetter_<Role>.pdf
+
+        where <Role> is *role* with spaces replaced by underscores
+        (falls back to *company_name* if *role* is empty).
 
         After successful conversion the temporary DOCX files are deleted.
 
         Args:
             resume_docx:   Path to the edited resume DOCX (temporary).
             cv_docx:       Path to the edited CV DOCX (temporary).
-            company_name:  Used as part of the output filename.
+            company_name:  Kept for backward-compatibility (used as fallback
+                           role slug when *role* is not supplied).
             output_folder: Destination directory for the final PDFs.
+            role:          The applied-for role (e.g. "Full Stack Developer").
+                           Spaces are converted to underscores in the filename.
 
         Returns:
             (resume_pdf_path, cv_pdf_path) as Path objects.
@@ -194,6 +208,14 @@ class PDFConverter:
 
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # ---- Build role slug for filename ----
+        # Use the role field; fall back to company_name if role is empty.
+        raw_role = role.strip() if role.strip() else company_name
+        # Replace spaces with underscores; strip characters illegal in filenames.
+        role_slug = re.sub(r"[^\w\s-]", "", raw_role).strip()
+        role_slug = re.sub(r"[\s]+", "_", role_slug)
+        role_slug = role_slug or "Application"
+
         # ---- Clear previous files in output directory ----
         for item in out_dir.iterdir():
             if item.is_file():
@@ -207,8 +229,8 @@ class PDFConverter:
         cv_pdf_tmp = self._convert_single(cv_docx_path, out_dir)
 
         # ---- Rename to final names ----
-        resume_final = out_dir / f"Resume_{company_name}.pdf"
-        cv_final = out_dir / f"CV_{company_name}.pdf"
+        resume_final = out_dir / f"Faysal's_Ahmed_Resume_{role_slug}.pdf"
+        cv_final     = out_dir / f"Faysal_Ahmed's_CoverLetter_{role_slug}.pdf"
 
         # Remove stale files with the same name if they exist
         if resume_final.exists():
