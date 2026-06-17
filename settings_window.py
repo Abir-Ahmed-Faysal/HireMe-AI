@@ -27,7 +27,8 @@ class SettingsWindow(tk.Toplevel):
     def __init__(self, parent: tk.Misc, config_path: Path):
         super().__init__(parent)
         self.title("Settings — HireMe AI")
-        self.resizable(False, False)
+        self.resizable(True, True)
+        self.minsize(500, 400)
 
         # Colours (kept in sync with main window)
         self._BG       = "#1e2433"
@@ -46,9 +47,11 @@ class SettingsWindow(tk.Toplevel):
 
         # Centre relative to parent
         self.update_idletasks()
-        px = parent.winfo_rootx() + (parent.winfo_width()  - self.winfo_width())  // 2
-        py = parent.winfo_rooty() + (parent.winfo_height() - self.winfo_height()) // 2
-        self.geometry(f"+{px}+{py}")
+        w = min(720, self.winfo_screenwidth() - 40)
+        h = min(600, self.winfo_screenheight() - 80)
+        px = parent.winfo_rootx() + (parent.winfo_width()  - w)  // 2
+        py = parent.winfo_rooty() + (parent.winfo_height() - h) // 2
+        self.geometry(f"{w}x{h}+{px}+{py}")
 
         # Block input to parent until this window is closed
         self.grab_set()
@@ -110,10 +113,32 @@ class SettingsWindow(tk.Toplevel):
         ).pack(side=tk.LEFT, padx=18, pady=0)
 
         # ── Scrollable body wrapper ─────────────────────────────────────
-        # (For simplicity in this app, we're not making it actually scrollable 
-        # unless it overflows, but we will make it fit well within a normal screen)
-        body = tk.Frame(self, bg=self._BG)
-        body.pack(fill=tk.BOTH, expand=True, padx=24, pady=20)
+        self.container = tk.Frame(self, bg=self._BG)
+        
+        canvas = tk.Canvas(self.container, bg=self._BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.container, orient="vertical", command=canvas.yview)
+        
+        body = tk.Frame(canvas, bg=self._BG)
+        
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        canvas_window = canvas.create_window((0, 0), window=body, anchor="nw")
+        
+        def on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            
+        def on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+            
+        body.bind("<Configure>", on_frame_configure)
+        canvas.bind("<Configure>", on_canvas_configure)
+        
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        self.bind("<MouseWheel>", _on_mousewheel)
 
         # Helper: build one labelled field row with optional Browse button
         self._vars: dict[str, tk.StringVar] = {}
@@ -222,7 +247,6 @@ class SettingsWindow(tk.Toplevel):
 
         # ── Test Connection Panel ────────────────────────────────────────
         test_panel = tk.Frame(self, bg=self._BG)
-        test_panel.pack(fill=tk.X, padx=24, pady=(0, 18))
         
         tk.Label(
             test_panel, 
@@ -269,7 +293,6 @@ class SettingsWindow(tk.Toplevel):
 
         # ── Button row ───────────────────────────────────────────────────
         btn_row = tk.Frame(self, bg=self._BG)
-        btn_row.pack(fill=tk.X, padx=24, pady=(0, 18))
 
         def mk_btn(parent, text, cmd, *, primary=False):
             bg = self._ACCENT if primary else self._SURFACE
@@ -290,6 +313,11 @@ class SettingsWindow(tk.Toplevel):
 
         mk_btn(btn_row, "✓  Save",           self._on_save,    primary=True).pack(side=tk.RIGHT, padx=(6, 0))
         mk_btn(btn_row, "✕  Cancel",          self.destroy                 ).pack(side=tk.RIGHT)
+
+        # Now pack everything in the correct order to ensure bottom panels stay at bottom
+        btn_row.pack(side=tk.BOTTOM, fill=tk.X, padx=24, pady=(0, 18))
+        test_panel.pack(side=tk.BOTTOM, fill=tk.X, padx=24, pady=(0, 18))
+        self.container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=24, pady=20)
 
     # ------------------------------------------------------------------ #
     # Browse helpers                                                       #
