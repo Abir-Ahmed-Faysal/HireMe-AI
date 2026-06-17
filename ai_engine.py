@@ -223,12 +223,13 @@ class AIEngine:
         
         raise last_error or AIError("Failed after retries")
 
-    def extract_skills(self, job_circular: str) -> list[str]:
+    def extract_skills(self, job_circular: str, resume_text: str = "") -> list[str]:
         """
-        Extract all technical skills and technologies from a job circular.
+        Extract missing technical skills and technologies from a job circular.
 
         Args:
             job_circular: Raw text of the job circular / job posting.
+            resume_text: Optional text of the applicant's resume.
 
         Returns:
             List of skill names (e.g. ["React", "Node.js", "MongoDB"])
@@ -244,7 +245,7 @@ class AIEngine:
             return []  # Return empty list for very short postings
 
         skills_prompt = (
-            "You are a skills extraction expert. Extract ALL technical skills, "
+            "You are a skills extraction expert. Extract technical skills, "
             "programming languages, frameworks, tools, databases, and technologies "
             "mentioned in this job circular.\n\n"
             "Return ONLY a valid JSON array with skill names, nothing else:\n"
@@ -256,9 +257,20 @@ class AIEngine:
             "- Include tools: Docker, Git, AWS, Jenkins, etc.\n"
             "- Do NOT include soft skills (communication, leadership, etc)\n"
             "- Remove duplicates\n"
-            "- Each skill should be properly capitalized\n\n"
-            "Job Circular:\n" + job_circular.strip()
+            "- Each skill should be properly capitalized\n"
         )
+
+        if resume_text and resume_text.strip():
+            skills_prompt += (
+                "\nCRITICAL INSTRUCTION:\n"
+                "I am providing the applicant's current resume text below. "
+                "You MUST compare the skills required by the job against the applicant's resume. "
+                "ONLY return the skills that are REQUIRED by the job BUT MISSING from the resume. "
+                "If a skill is already mentioned in the resume (even as a synonym or abbreviation), DO NOT include it.\n\n"
+                f"--- Resume Text Start ---\n{resume_text.strip()}\n--- Resume Text End ---\n\n"
+            )
+
+        skills_prompt += "Job Circular:\n" + job_circular.strip()
 
         user_msg = skills_prompt
 

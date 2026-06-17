@@ -324,6 +324,20 @@ class DocEditor:
         self.resume_template = self.template_folder / "resume.docx"
         self.cv_template = self.template_folder / "cv.docx"
 
+    def get_resume_text(self) -> str:
+        """Return the full text of the resume template."""
+        if not self.resume_template.exists():
+            return ""
+        try:
+            doc = Document(str(self.resume_template))
+            return _document_full_text(doc)
+        except Exception:
+            return ""
+
+    def get_existing_skills(self) -> list[str]:
+        """Fallback to prevent AttributeError in older main.py logic."""
+        return []
+
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------

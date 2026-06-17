@@ -557,9 +557,30 @@ class JobApplicationAI:
         body = tk.Frame(card, bg=SURFACE)
         body.pack(fill=tk.X, padx=16, pady=(0, 16))
 
-        # Container for checkboxes (will be populated dynamically)
-        self.skills_container = tk.Frame(body, bg=SURFACE)
-        self.skills_container.pack(fill=tk.X)
+        # ── Scrollable skills list ───────────────────────────────────────
+        list_canvas = tk.Canvas(body, bg=SURFACE, highlightthickness=0, height=160)
+        list_scroll = tk.Scrollbar(body, orient=tk.VERTICAL, command=list_canvas.yview,
+                                   bg=SURFACE, activebackground=BORDER)
+        list_canvas.configure(yscrollcommand=list_scroll.set)
+
+        list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        list_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.skills_container = tk.Frame(list_canvas, bg=SURFACE)
+        skills_win = list_canvas.create_window((0, 0), window=self.skills_container, anchor="nw")
+
+        def _on_skills_configure(event):
+            list_canvas.configure(scrollregion=list_canvas.bbox("all"))
+            list_canvas.itemconfig(skills_win, width=list_canvas.winfo_width())
+        def _on_list_canvas_resize(event):
+            list_canvas.itemconfig(skills_win, width=event.width)
+        self.skills_container.bind("<Configure>", _on_skills_configure)
+        list_canvas.bind("<Configure>", _on_list_canvas_resize)
+
+        def _mousewheel_skills(event):
+            list_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        list_canvas.bind("<MouseWheel>", _mousewheel_skills)
+        self.skills_container.bind("<MouseWheel>", _mousewheel_skills)
 
         # Initially empty message
         self.skills_empty_msg = tk.Label(
@@ -567,79 +588,148 @@ class JobApplicationAI:
             text="Analyze a job posting to see missing skills",
             bg=SURFACE,
             fg=SUBTEXT,
-            font=("Segoe UI", 8),
+            font=("Segoe UI", 8, "italic"),
         )
         self.skills_empty_msg.pack(fill=tk.X, pady=8)
+
+        # ── Manual add row ───────────────────────────────────────────────
+        add_frame = tk.Frame(body if False else card, bg=SURFACE)
+        # re-pack under the card properly:
+        add_frame = tk.Frame(card, bg=SURFACE)
+        add_frame.pack(fill=tk.X, padx=16, pady=(4, 12))
+
+        tk.Label(
+            add_frame,
+            text="ADD SKILL MANUALLY",
+            bg=SURFACE, fg=ACCENT,
+            font=("Segoe UI", 7, "bold"),
+            anchor="w",
+        ).pack(fill=tk.X, pady=(0, 4))
+
+        entry_row = tk.Frame(add_frame, bg=SURFACE)
+        entry_row.pack(fill=tk.X)
+
+        self._manual_skill_var = tk.StringVar()
+        manual_entry = tk.Entry(
+            entry_row,
+            textvariable=self._manual_skill_var,
+            bg=SURFACE2, fg=TEXT,
+            insertbackground=ACCENT,
+            relief=tk.FLAT,
+            font=("Segoe UI", 9),
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            highlightcolor=ACCENT,
+        )
+        manual_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=5, padx=(0, 6))
+
+        def _add_manual_skill(event=None):
+            skill = self._manual_skill_var.get().strip()
+            if not skill:
+                return
+            if skill in self.skills_data:
+                self._manual_skill_var.set("")
+                return
+            # Remove empty-state message if still there
+            for w in self.skills_container.winfo_children():
+                if isinstance(w, tk.Label):
+                    w.destroy()
+            self._add_skill_checkbox(skill, checked=True)
+            self._manual_skill_var.set("")
+
+        manual_entry.bind("<Return>", _add_manual_skill)
+
+        tk.Button(
+            entry_row,
+            text="＋ Add",
+            command=_add_manual_skill,
+            bg=ACCENT,
+            fg="white",
+            activebackground=ACCENT2,
+            activeforeground="white",
+            relief=tk.FLAT,
+            font=("Segoe UI", 8, "bold"),
+            cursor="hand2",
+            padx=10, pady=4,
+        ).pack(side=tk.LEFT)
 
         # Store checkbox variables and skills data
         self.skills_data = {}  # {skill_name: tk.BooleanVar}
 
-    def _populate_skills_section(self, job_skills: list[str]) -> None:
+    def _add_skill_checkbox(self, skill: str, checked: bool = False) -> None:
+        """Add a single skill checkbox row to the skills container."""
+        var = tk.BooleanVar(value=checked)
+        self.skills_data[skill] = var
+
+        row = tk.Frame(self.skills_container, bg=SURFACE)
+        row.pack(fill=tk.X, pady=1)
+
+        cb = tk.Checkbutton(
+            row,
+            text=skill,
+            variable=var,
+            bg=SURFACE,
+            fg=TEXT,
+            selectcolor=SURFACE2,
+            activebackground=SURFACE,
+            activeforeground=ACCENT,
+            font=("Segoe UI", 9),
+            highlightthickness=0,
+            anchor="w",
+        )
+        cb.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # ✕ remove button
+        def _remove(s=skill, r=row):
+            del self.skills_data[s]
+            r.destroy()
+        tk.Button(
+            row,
+            text="✕",
+            command=_remove,
+            bg=SURFACE,
+            fg=SUBTEXT,
+            activebackground=SURFACE,
+            activeforeground="#e05c5c",
+            relief=tk.FLAT,
+            font=("Segoe UI", 8),
+            cursor="hand2",
+            bd=0, padx=4,
+        ).pack(side=tk.RIGHT)
+
+    def _populate_skills_section(self, missing_skills: list[str]) -> None:
         """
         Populate skills section with checkboxes for missing skills.
         
         Args:
-            job_skills: List of skills extracted from job circular
+            missing_skills: List of skills missing from the resume (AI-determined)
         """
-        # Get existing skills from resume
-        existing_skills = set()
-        if self.doc_editor:
-            existing = self.doc_editor.get_existing_skills()
-            existing_skills = set(s.lower() for s in existing)
-
-        # Find missing skills (not in resume)
-        missing_skills = []
-        for skill in job_skills:
-            if skill.lower() not in existing_skills:
-                missing_skills.append(skill)
-
         # Clear previous checkboxes
         for widget in self.skills_container.winfo_children():
             widget.destroy()
         self.skills_data.clear()
 
         if not missing_skills:
-            msg = tk.Label(
+            tk.Label(
                 self.skills_container,
                 text="✅ You already have all the skills from this job!",
                 bg=SURFACE,
                 fg=SUCCESS,
                 font=("Segoe UI", 8, "italic"),
-            )
-            msg.pack(fill=tk.X, pady=8)
+            ).pack(fill=tk.X, pady=8)
             return
 
-        # Create checkboxes for missing skills
-        for skill in missing_skills[:12]:  # Limit to 12 skills for UI space
-            var = tk.BooleanVar(value=False)
-            self.skills_data[skill] = var
+        # Header hint
+        tk.Label(
+            self.skills_container,
+            text=f"☑ Tick skills to add to your resume  ({len(missing_skills)} missing)",
+            bg=SURFACE, fg=SUBTEXT,
+            font=("Segoe UI", 7, "italic"),
+            anchor="w",
+        ).pack(fill=tk.X, pady=(4, 6))
 
-            check_frame = tk.Frame(self.skills_container, bg=SURFACE)
-            check_frame.pack(fill=tk.X, pady=2)
-
-            check = tk.Checkbutton(
-                check_frame,
-                text=skill,
-                variable=var,
-                bg=SURFACE,
-                fg=TEXT,
-                selectcolor=SURFACE2,
-                activebackground=SURFACE,
-                activeforeground=ACCENT,
-                font=("Segoe UI", 9),
-                highlightthickness=0,
-            )
-            check.pack(side=tk.LEFT)
-
-        if len(missing_skills) > 12:
-            more_msg = tk.Label(
-                self.skills_container,
-                text=f"… and {len(missing_skills) - 12} more",
-                bg=SURFACE,
-                fg=SUBTEXT,
-                font=("Segoe UI", 7, "italic"),
-            )
-            more_msg.pack(fill=tk.X, pady=4)
+        for skill in missing_skills:
+            self._add_skill_checkbox(skill, checked=False)
 
     def _get_selected_skills(self) -> list[str]:
         """Return list of skills that are checked."""
@@ -836,7 +926,11 @@ class JobApplicationAI:
                 
                 # Extract skills (non-blocking failure)
                 try:
-                    skills = self.ai_engine.extract_skills(raw)
+                    resume_text = ""
+                    if self.doc_editor and hasattr(self.doc_editor, 'get_resume_text'):
+                        resume_text = self.doc_editor.get_resume_text()
+                        
+                    skills = self.ai_engine.extract_skills(raw, resume_text=resume_text)
                     self.root.after(0, lambda s=skills: self._populate_skills_section(s))
                 except Exception as e:
                     # Log but don't show error - skills are optional
@@ -985,6 +1079,7 @@ class JobApplicationAI:
                     self.root.after(0, lambda: self._set_status(
                         "Step 1/3 — Editing templates…", color=ACCENT
                     ))
+                    selected_skills = self._get_selected_skills()
                     self.doc_editor.edit_resume(job_title, str(resume_tmp), role=role)
                     self.doc_editor.edit_cv(company_name, role, location, str(cv_tmp), job_title=job_title)
                 except Exception as e:
@@ -1005,7 +1100,20 @@ class JobApplicationAI:
                         safe_company,
                         output_folder,
                         role=role,
-                        applicant_name=self.config.get("applicant_name", "Applicant")
+                        applicant_name=self.config.get("applicant_name", "Applicant"),
+                    )
+                    # ── Skills reminder popup ────────────────────────────
+                    if selected_skills:
+                        skills_list = "\n".join(f"  • {s}" for s in selected_skills)
+                        self.root.after(0, lambda sl=skills_list: messagebox.showinfo(
+                            "📌  Skills to Add Manually",
+                            "PDFs generated! Remember to manually add these "
+                            "selected skills to your resume.docx:\n\n"
+                            + sl +
+                            "\n\nTip: Open resume.docx, find the Skills section "
+                            "and add them there.",
+                        ))
+                    _ = (  # dummy to close the tuple
                     )
                 except Exception as e:
                     self.root.after(0, lambda e=e: messagebox.showerror(
