@@ -36,7 +36,10 @@ env/
 Thumbs.db
 
 # Application
-output/*
+output/
+app_logs/
+.draft.json
+.history.json
 config.json
 *.docx
 *.pdf

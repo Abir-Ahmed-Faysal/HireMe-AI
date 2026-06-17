@@ -184,24 +184,175 @@ class AIEngine:
             job_circular: Raw text of the job circular / job posting.
 
         Returns:
-            dict with keys: job_title, company_name, role
+            dict with keys: job_title, company_name, role, location, tech_stack
 
         Raises:
             AIResponseError: If input is empty or the AI response JSON is invalid.
             AIError:  If the API call fails (Authentication, Network, Rate Limit).
         """
+        # Validate input
         if not job_circular or not job_circular.strip():
-            raise AIResponseError("Job circular text cannot be empty.")
+            raise AIResponseError("Please paste a job circular/posting to analyze.")
+        
+        if len(job_circular.strip()) < 20:
+            raise AIResponseError("Job posting is too short. Please paste a complete job description.")
 
         user_msg = (
             "Extract job details from this job circular and return ONLY the JSON:\n\n"
             + job_circular.strip()
         )
 
+        # Call appropriate provider with retry logic for transient failures
+        retries = 3
+        last_error = None
+        
+        for attempt in range(retries):
+            try:
+                if self.provider["type"] == "anthropic":
+                    return self._call_claude(user_msg)
+                else:
+                    return self._call_openai_compat(user_msg)
+            except (AINetworkError, AIRateLimitError) as e:
+                last_error = e
+                if attempt < retries - 1:
+                    import time
+                    time.sleep(1 + attempt)  # Exponential backoff
+                    continue
+            except AIAuthenticationError:
+                raise  # Don't retry auth errors
+        
+        raise last_error or AIError("Failed after retries")
+
+    def extract_skills(self, job_circular: str) -> list[str]:
+        """
+        Extract all technical skills and technologies from a job circular.
+
+        Args:
+            job_circular: Raw text of the job circular / job posting.
+
+        Returns:
+            List of skill names (e.g. ["React", "Node.js", "MongoDB"])
+
+        Raises:
+            AIResponseError: If input is empty or the AI response JSON is invalid.
+            AIError:  If the API call fails.
+        """
+        if not job_circular or not job_circular.strip():
+            raise AIResponseError("Job posting cannot be empty.")
+        
+        if len(job_circular.strip()) < 20:
+            return []  # Return empty list for very short postings
+
+        skills_prompt = (
+            "You are a skills extraction expert. Extract ALL technical skills, "
+            "programming languages, frameworks, tools, databases, and technologies "
+            "mentioned in this job circular.\n\n"
+            "Return ONLY a valid JSON array with skill names, nothing else:\n"
+            '["Skill1", "Skill2", "Skill3"]\n\n'
+            "Guidelines:\n"
+            "- Include programming languages: JavaScript, Python, Java, etc.\n"
+            "- Include frameworks: React, Vue.js, Django, Spring Boot, etc.\n"
+            "- Include databases: MongoDB, PostgreSQL, MySQL, etc.\n"
+            "- Include tools: Docker, Git, AWS, Jenkins, etc.\n"
+            "- Do NOT include soft skills (communication, leadership, etc)\n"
+            "- Remove duplicates\n"
+            "- Each skill should be properly capitalized\n\n"
+            "Job Circular:\n" + job_circular.strip()
+        )
+
+        user_msg = skills_prompt
+
         if self.provider["type"] == "anthropic":
-            return self._call_claude(user_msg)
+            response = self._call_claude_skills(user_msg)
         else:
-            return self._call_openai_compat(user_msg)
+            response = self._call_openai_compat_skills(user_msg)
+
+        return response
+
+    def _call_claude_skills(self, user_msg: str) -> list[str]:
+        """Claude call for skills extraction - returns list instead of dict."""
+        try:
+            msg = self._anthropic_client.messages.create(
+                model=self.provider["model"],
+                max_tokens=1024,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+        except anthropic.AuthenticationError:
+            raise AIAuthenticationError("Invalid Claude API key.")
+        except anthropic.RateLimitError:
+            raise AIRateLimitError("Claude rate limit exceeded.")
+        except (anthropic.APIConnectionError, anthropic.APITimeoutError):
+            raise AINetworkError("Cannot connect to Claude API.")
+        except anthropic.APIError as e:
+            raise AIError(f"Claude API error: {e}")
+
+        if not msg.content:
+            raise AIResponseError("Claude returned an empty response.")
+        return self._parse_skills_json(msg.content[0].text)
+
+    def _call_openai_compat_skills(self, user_msg: str) -> list[str]:
+        """OpenAI-compatible call for skills extraction - returns list."""
+        payload = {
+            "model":      self.provider["model"],
+            "max_tokens": 1024,
+            "messages":   [{"role": "user", "content": user_msg}],
+        }
+        try:
+            resp = self._http.post("/chat/completions", json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if code == 401:
+                raise AIAuthenticationError(f"Invalid {self.provider['name']} API key.")
+            elif code == 429:
+                raise AIRateLimitError(f"{self.provider['name']} rate limit exceeded.")
+            else:
+                raise AIError(f"{self.provider['name']} API error {code}.")
+        except (httpx.TimeoutException, httpx.ConnectError):
+            raise AINetworkError(f"Cannot connect to {self.provider['name']} API.")
+        except Exception as e:
+            raise AIError(f"Unexpected error: {e}")
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        return self._parse_skills_json(content)
+
+    def _parse_skills_json(self, text: str) -> list[str]:
+        """
+        Parse JSON array of skills from response.
+        
+        Handles markdown code fences and malformed JSON gracefully.
+        """
+        if not text or not text.strip():
+            return []
+        
+        text = text.strip()
+
+        # Strip markdown code fences
+        if text.startswith("```"):
+            lines = text.splitlines()
+            lines = lines[1:] if lines else lines
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise AIResponseError(f"Invalid JSON response: {e}")
+
+        if not isinstance(data, list):
+            raise AIResponseError(f"Expected JSON array, got {type(data).__name__}")
+
+        # Clean and deduplicate
+        skills = []
+        seen = set()
+        for skill in data:
+            s = str(skill).strip()
+            if s and s.lower() not in {x.lower() for x in seen}:
+                skills.append(s)
+                seen.add(s.lower())
+
+        return skills
 
     def test_connection(self) -> tuple[bool, str]:
         """
@@ -318,7 +469,20 @@ class AIEngine:
         content = resp.json()["choices"][0]["message"]["content"]
         return self._parse_json(content)
 
-    def _parse_json(self, text: str) -> dict:
+    def _parse_json(self, text: str, expected_keys: set[str] | None = None) -> dict:
+        """
+        Parse JSON from response with validation.
+        
+        Args:
+            text: Raw response text (may contain markdown fences)
+            expected_keys: Set of required keys to validate
+        
+        Returns:
+            Parsed dict with defaults for missing fields
+        
+        Raises:
+            AIResponseError: If JSON is malformed or missing critical fields
+        """
         """Strip markdown fences and parse JSON; validate required fields."""
         text = text.strip()
 

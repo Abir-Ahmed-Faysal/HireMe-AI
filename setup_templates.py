@@ -77,12 +77,17 @@ def _spacer(doc: Document) -> None:
 # resume.docx
 # ──────────────────────────────────────────────────────────────────────────────
 
-def create_resume(output_path: Path) -> None:
+def create_resume(output_path: Path, config: dict = None) -> None:
     """
     Create a sample resume with the {{JOB_TITLE}} placeholder.
     The placeholder is used as the document's professional headline.
     """
     doc = Document()
+    config = config or {}
+    
+    app_name = config.get("applicant_name", "YOUR NAME").upper()
+    app_phone = config.get("applicant_phone", "+123-456-7890")
+    app_email = config.get("applicant_email", "email@example.com")
 
     # ── Page margins ──
     for section in doc.sections:
@@ -94,13 +99,13 @@ def create_resume(output_path: Path) -> None:
     # ── Name / contact header ──
     name_para = doc.add_paragraph()
     name_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    name_run = name_para.add_run("MD. FAYSAL AHMED")
+    name_run = name_para.add_run(app_name)
     _set_run_style(name_run, bold=True, size_pt=18, colour=(31, 73, 125))
 
     contact_para = doc.add_paragraph()
     contact_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     contact_run = contact_para.add_run(
-        "Dhaka, Bangladesh  |  +880-1700-000000  |  faysal@example.com  |  linkedin.com/in/faysal"
+        f"City, Country  |  {app_phone}  |  {app_email}  |  linkedin.com/in/username"
     )
     _set_run_style(contact_run, size_pt=9, colour=(80, 80, 80))
 
@@ -174,18 +179,23 @@ def create_resume(output_path: Path) -> None:
     _bullet(doc, "English — Professional working proficiency")
 
     doc.save(str(output_path))
-    print(f"  ✅  resume.docx created at {output_path}")
+    print(f"  [OK]  resume.docx created at {output_path}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # cv.docx
 # ──────────────────────────────────────────────────────────────────────────────
 
-def create_cv(output_path: Path) -> None:
+def create_cv(output_path: Path, config: dict = None) -> None:
     """
     Create a sample cover-letter CV with {{COMPANY_NAME}} and {{ROLE}} placeholders.
     """
     doc = Document()
+    config = config or {}
+    
+    app_name = config.get("applicant_name", "Your Name")
+    app_phone = config.get("applicant_phone", "+123-456-7890")
+    app_email = config.get("applicant_email", "email@example.com")
 
     # ── Page margins ──
     for section in doc.sections:
@@ -195,9 +205,9 @@ def create_cv(output_path: Path) -> None:
         section.right_margin  = Inches(1.15)
 
     # ── Sender block ──
-    _normal(doc, "Md. Faysal Ahmed", bold=True, size_pt=12)
-    _normal(doc, "Dhaka, Bangladesh", size_pt=10)
-    _normal(doc, "+880-1700-000000  |  faysal@example.com", size_pt=10)
+    _normal(doc, app_name, bold=True, size_pt=12)
+    _normal(doc, "City, Country", size_pt=10)
+    _normal(doc, f"{app_phone}  |  {app_email}", size_pt=10)
     _spacer(doc)
 
     # ── Date ──
@@ -255,7 +265,7 @@ def create_cv(output_path: Path) -> None:
     _normal(doc,
         "I have attached my resume for your review and would welcome the opportunity to discuss "
         "how my experience can benefit {{COMPANY_NAME}}. Please feel free to contact me at "
-        "+880-1700-000000 or faysal@example.com at your convenience.",
+        f"{app_phone} or {app_email} at your convenience.",
         size_pt=10)
     _spacer(doc)
 
@@ -266,10 +276,10 @@ def create_cv(output_path: Path) -> None:
     # ── Sign-off ──
     _normal(doc, "Sincerely,", size_pt=10)
     _spacer(doc)
-    _normal(doc, "Md. Faysal Ahmed", bold=True, size_pt=11)
+    _normal(doc, app_name, bold=True, size_pt=11)
 
     doc.save(str(output_path))
-    print(f"  ✅  cv.docx created at {output_path}")
+    print(f"  [OK]  cv.docx created at {output_path}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -312,7 +322,7 @@ def main() -> None:
     for path in (resume_path, cv_path):
         if path.exists():
             answer = input(
-                f"  ⚠  {path.name} already exists. Overwrite? [y/N] "
+                f"  WARNING:  {path.name} already exists. Overwrite? [y/N] "
             ).strip().lower()
             if answer != "y":
                 print(f"     Skipping {path.name}")
@@ -322,16 +332,16 @@ def main() -> None:
                     cv_path = None
 
     if resume_path:
-        create_resume(resume_path)
+        create_resume(resume_path, config)
     if cv_path:
-        create_cv(cv_path)
+        create_cv(cv_path, config)
 
     print(
         "\nDone! Open resume.docx and cv.docx, replace the sample content\n"
         "with your real information, then run the main app.\n"
         "\nPlaceholders to keep intact:\n"
-        "  resume.docx  →  {{JOB_TITLE}}\n"
-        "  cv.docx      →  {{COMPANY_NAME}}  and  {{ROLE}}\n"
+        "  resume.docx  ->  {{JOB_TITLE}}\n"
+        "  cv.docx      ->  {{COMPANY_NAME}}  and  {{ROLE}}\n"
     )
 
 

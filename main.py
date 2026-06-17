@@ -22,28 +22,31 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
+import traceback
 
 from ai_engine import AIEngine, PROVIDERS, PROVIDER_ORDER
 from doc_editor import DocEditor
 from pdf_converter import PDFConverter
 from settings_window import SettingsWindow
+from history_manager import HistoryManager
+from logger_manager import LoggerManager
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Palette
+# Palette - Professional Dark Theme
 # ──────────────────────────────────────────────────────────────────────────────
-BG        = "#1e2433"   # dark navy background
-SURFACE   = "#252d3d"   # card / panel surface
-SURFACE2  = "#2e3a52"   # slightly lighter surface (inputs)
-ACCENT    = "#4f8ef7"   # primary blue accent
-ACCENT2   = "#6ba3ff"   # hover / lighter accent
-SUCCESS   = "#4caf7d"   # green for success
-ERROR     = "#e05c5c"   # red for errors
-WARNING   = "#f0a500"   # amber for warnings
-TEXT      = "#e8eaf0"   # primary text
-SUBTEXT   = "#8b93a8"   # secondary / label text
-BORDER    = "#3a4560"   # subtle border
-HEADER_H  = 56          # header bar height px
+BG        = "#0f1419"   # deep dark background (more professional)
+SURFACE   = "#1a1f2e"   # card / panel surface
+SURFACE2  = "#242d3f"   # slightly lighter surface (inputs)
+ACCENT    = "#5b9fff"   # vibrant blue accent (more visible)
+ACCENT2   = "#7aadff"   # hover / lighter accent
+SUCCESS   = "#50d76e"   # bright green for success
+ERROR     = "#ff6b6b"   # bright red for errors
+WARNING   = "#ffa500"   # bright amber for warnings
+TEXT      = "#e8eaf0"   # primary text (high contrast)
+SUBTEXT   = "#9ba5b8"   # secondary / label text
+BORDER    = "#2a3447"   # subtle border
+HEADER_H  = 60          # header bar height px
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -91,10 +94,15 @@ class JobApplicationAI:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("HireMe AI")
-        self.root.geometry("1020x720")
-        self.root.minsize(800, 600)
+        self.root.title("HireMe AI — Smart Job Application Assistant")
+        self.root.geometry("1200x800")
+        self.root.minsize(900, 650)
         self.root.configure(bg=BG)
+        
+        # Improve window appearance
+        self.root.option_add("*Font", "{Segoe UI} 9")
+        self.root.option_add("*Background", BG)
+        self.root.option_add("*Foreground", TEXT)
 
         # Try to set a window icon (silently skip if unavailable)
         icon_path = Path(__file__).parent / "icon.ico"
@@ -107,12 +115,19 @@ class JobApplicationAI:
         self.config_path: Path = _config_path()
         self.config: dict = _load_config(self.config_path)
 
+        # Initialize history and logging managers
+        self.history_manager = HistoryManager()
+        self.logger_manager = LoggerManager()
+        self.logger_manager.info("Application started")
+
         # Engine handles — initialised after UI so status bar is available
         self.ai_engine: AIEngine | None = None
         self.doc_editor: DocEditor | None = None
         self.pdf_converter: PDFConverter | None = None
 
         self._build_ui()
+        self._load_draft_on_startup()
+        self._setup_autosave()
         self._reinitialise_engines()
 
     # ──────────────────────────────────────────────────────────────────
@@ -183,6 +198,45 @@ class JobApplicationAI:
             self._set_status("Ready — paste a job circular and click Analyze", color=SUCCESS)
 
     # ──────────────────────────────────────────────────────────────────
+    # Draft and history management
+    # ──────────────────────────────────────────────────────────────────
+
+    def _load_draft_on_startup(self) -> None:
+        """Load last saved draft if available (data recovery feature)."""
+        draft = self.history_manager.load_draft()
+        if draft and any(draft.values()):
+            # Check if form fields exist (they're created during _build_ui)
+            if hasattr(self, "job_title_var"):
+                self.job_title_var.set(draft.get("job_title", ""))
+                self.company_name_var.set(draft.get("company", ""))
+                self.role_var.set(draft.get("role", ""))
+                if draft.get("job_circular"):
+                    self.circular_text.delete("1.0", tk.END)
+                    self.circular_text.insert("1.0", draft.get("job_circular", ""))
+                    self.circular_text.config(fg=TEXT)
+                self.logger_manager.info("Draft recovered from previous session")
+
+    def _setup_autosave(self) -> None:
+        """Setup auto-save of form data every 30 seconds."""
+        def _autosave():
+            try:
+                if hasattr(self, "job_title_var"):
+                    self.history_manager.save_draft(
+                        job_title=self.job_title_var.get(),
+                        company=self.company_name_var.get(),
+                        role=self.role_var.get(),
+                        job_circular=self.circular_text.get("1.0", tk.END).strip()
+                    )
+            except Exception as exc:
+                self.logger_manager.debug(f"Autosave failed: {exc}")
+            finally:
+                # Schedule next autosave in 30 seconds
+                self.root.after(30000, _autosave)
+        
+        # Start autosave loop
+        self.root.after(30000, _autosave)
+
+    # ──────────────────────────────────────────────────────────────────
     # UI construction
     # ──────────────────────────────────────────────────────────────────
 
@@ -206,46 +260,61 @@ class JobApplicationAI:
         bar.pack(fill=tk.X, side=tk.TOP)
         bar.pack_propagate(False)
 
+        # Left side: App name
+        left_frame = tk.Frame(bar, bg=ACCENT)
+        left_frame.pack(side=tk.LEFT, padx=24, fill=tk.Y)
+        
         tk.Label(
-            bar,
-            text="  ✦  HireMe AI",
+            left_frame,
+            text="HireMe AI",
             bg=ACCENT,
             fg="white",
-            font=("Segoe UI", 15, "bold"),
+            font=("Segoe UI", 16, "bold"),
             anchor="w",
-        ).pack(side=tk.LEFT, padx=20, fill=tk.Y)
+        ).pack(side=tk.LEFT, pady=8)
+        
+        tk.Label(
+            left_frame,
+            text="Smart Job Application Assistant",
+            bg=ACCENT,
+            fg="#b8d0ff",
+            font=("Segoe UI", 7),
+            anchor="w",
+        ).pack(side=tk.LEFT, padx=(12, 0), pady=8)
 
+        # Right side: Powered by
         self.header_ai_lbl = tk.Label(
             bar,
             text="Powered by AI",
             bg=ACCENT,
-            fg="#c8d8ff",
+            fg="#d0e0ff",
             font=("Segoe UI", 9),
         )
-        self.header_ai_lbl.pack(side=tk.RIGHT, padx=20)
+        self.header_ai_lbl.pack(side=tk.RIGHT, padx=24, pady=8)
 
     def _build_body(self) -> None:
-        """Main content area."""
+        """Main content area with responsive layout."""
         outer = tk.Frame(self.root, bg=BG)
-        outer.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+        outer.pack(fill=tk.BOTH, expand=True, padx=24, pady=20)
 
         # ── Left column (job circular + analyze) ────────────────────────
         left = tk.Frame(outer, bg=BG)
-        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 16))
 
         self._build_circular_section(left)
 
         # ── Right column (details + actions) — scrollable ───────────────
-        right_outer = tk.Frame(outer, bg=BG, width=320)
-        right_outer.pack(side=tk.RIGHT, fill=tk.Y)
+        right_outer = tk.Frame(outer, bg=BG, width=360)
+        right_outer.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False, padx=(16, 0))
         right_outer.pack_propagate(False)
 
-        # Scrollable canvas so content is reachable at any window height
+        # Scrollable canvas for right panel content
         right_canvas = tk.Canvas(
-            right_outer, bg=BG, bd=0, highlightthickness=0, width=320
+            right_outer, bg=BG, bd=0, highlightthickness=0
         )
         right_scroll = tk.Scrollbar(
-            right_outer, orient=tk.VERTICAL, command=right_canvas.yview
+            right_outer, orient=tk.VERTICAL, command=right_canvas.yview,
+            bg=BG, activebackground=BORDER
         )
         right_canvas.configure(yscrollcommand=right_scroll.set)
 
@@ -265,27 +334,28 @@ class JobApplicationAI:
         right.bind("<Configure>", _on_right_configure)
         right_canvas.bind("<Configure>", _on_canvas_resize)
 
-        # Mouse-wheel scrolling when cursor is over the right panel
+        # Mouse-wheel scrolling
         def _on_mousewheel(event):
             right_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
         right_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         self._build_details_section(right)
+        self._build_skills_section(right)
         self._build_action_buttons(right)
 
     # ── Job circular panel ─────────────────────────────────────────────
 
     def _build_circular_section(self, parent: tk.Frame) -> None:
-        card = self._make_card(parent, "📋  Paste Job Circular Here")
-        card.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        card = self._make_card(parent, "📋  Job Posting")
+        card.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
 
         self.circular_text = scrolledtext.ScrolledText(
             card,
             wrap=tk.WORD,
             bg=SURFACE2,
             fg=TEXT,
-            insertbackground=TEXT,
+            insertbackground=ACCENT,
             selectbackground=ACCENT,
             font=("Segoe UI", 9),
             relief=tk.FLAT,
@@ -293,10 +363,10 @@ class JobApplicationAI:
             highlightthickness=1,
             highlightbackground=BORDER,
             highlightcolor=ACCENT,
-            padx=10,
-            pady=8,
+            padx=12,
+            pady=10,
         )
-        self.circular_text.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
+        self.circular_text.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
 
         # Placeholder hint text
         _placeholder = "Paste the full job description / advertisement here…"
@@ -316,17 +386,29 @@ class JobApplicationAI:
         self.circular_text.bind("<FocusIn>",  _on_focus_in)
         self.circular_text.bind("<FocusOut>", _on_focus_out)
 
-        # Analyze button row
+        # Analyze button row with AI selector
         btn_row = tk.Frame(card, bg=SURFACE)
-        btn_row.pack(fill=tk.X, padx=14, pady=(0, 14))
+        btn_row.pack(fill=tk.X, padx=16, pady=(0, 16))
 
         self.analyze_btn = self._make_button(
             btn_row,
-            "🔍  Analyze with AI",
+            "🔍  Analyze",
             self._on_analyze,
             primary=True,
         )
-        self.analyze_btn.pack(side=tk.LEFT)
+        self.analyze_btn.pack(side=tk.LEFT, expand=False)
+
+        # Spacing
+        tk.Frame(btn_row, bg=SURFACE, width=8).pack(side=tk.LEFT)
+
+        # AI Switcher Label
+        tk.Label(
+            btn_row,
+            text="AI:",
+            bg=SURFACE,
+            fg=SUBTEXT,
+            font=("Segoe UI", 8, "bold"),
+        ).pack(side=tk.LEFT, padx=(4, 4))
 
         # AI Switcher Combobox
         self.active_ai_var = tk.StringVar(value=self.config.get("active_ai", PROVIDER_ORDER[0]))
@@ -335,7 +417,6 @@ class JobApplicationAI:
             new_ai = self.active_ai_var.get()
             if self.config.get("active_ai") == new_ai: return
             self.config["active_ai"] = new_ai
-            # Save to file
             try:
                 with open(self.config_path, "w", encoding="utf-8") as fh:
                     json.dump(self.config, fh, indent=2)
@@ -350,25 +431,26 @@ class JobApplicationAI:
             textvariable=self.active_ai_var,
             values=list(PROVIDER_ORDER),
             state="readonly",
-            width=10,
-            font=("Segoe UI", 9)
+            width=11,
+            font=("Segoe UI", 8)
         )
-        ai_combo.pack(side=tk.LEFT, padx=(12, 0))
+        ai_combo.pack(side=tk.LEFT, padx=(0, 8))
 
+        # Progress indicator
         self._analyze_progress = tk.Label(
             btn_row,
             text="",
             bg=SURFACE,
-            fg=SUBTEXT,
+            fg=ACCENT,
             font=("Segoe UI", 8, "italic"),
         )
-        self._analyze_progress.pack(side=tk.LEFT, padx=12)
+        self._analyze_progress.pack(side=tk.LEFT, padx=0)
 
     # ── Details panel ──────────────────────────────────────────────────
 
     def _build_details_section(self, parent: tk.Frame) -> None:
-        card = self._make_card(parent, "📝  Extracted Job Details")
-        card.pack(fill=tk.X, pady=(0, 10))
+        card = self._make_card(parent, "📝  Job Details")
+        card.pack(fill=tk.X, pady=(0, 12))
 
         self.job_title_var    = tk.StringVar()
         self.tech_stack_var   = tk.StringVar()
@@ -377,59 +459,59 @@ class JobApplicationAI:
         self.location_var     = tk.StringVar()
 
         fields = [
-            ("Job Title",    self.job_title_var,    "Role title from job circular (e.g. Full Stack Developer)"),
-            ("Tech Stack",   self.tech_stack_var,   "Key technologies for this role (e.g. Next.js · Node.js · PostgreSQL)"),
-            ("Company Name", self.company_name_var, "Employer / organisation name"),
-            ("Role",         self.role_var,         "Exact position being applied for"),
-            ("Location",     self.location_var,     "Job location or 'Remote'"),
+            ("Job Title",    self.job_title_var,    "e.g., Full Stack Developer"),
+            ("Company",      self.company_name_var, "Company name"),
+            ("Role",         self.role_var,         "Position title"),
+            ("Tech Stack",   self.tech_stack_var,   "e.g., React · Node.js · PostgreSQL"),
+            ("Location",     self.location_var,     "City or Remote"),
         ]
 
         body = tk.Frame(card, bg=SURFACE)
-        body.pack(fill=tk.X, padx=14, pady=(0, 14))
+        body.pack(fill=tk.X, padx=16, pady=(0, 16))
 
         for label_text, var, hint in fields:
             tk.Label(
                 body,
                 text=label_text.upper(),
                 bg=SURFACE,
-                fg=SUBTEXT,
+                fg=ACCENT,
                 font=("Segoe UI", 7, "bold"),
                 anchor="w",
-            ).pack(fill=tk.X, pady=(10, 2))
+            ).pack(fill=tk.X, pady=(8, 3))
 
             entry = tk.Entry(
                 body,
                 textvariable=var,
                 bg=SURFACE2,
                 fg=TEXT,
-                insertbackground=TEXT,
+                insertbackground=ACCENT,
                 selectbackground=ACCENT,
                 relief=tk.FLAT,
-                font=("Segoe UI", 10),
+                font=("Segoe UI", 9),
                 highlightthickness=1,
                 highlightbackground=BORDER,
                 highlightcolor=ACCENT,
             )
-            entry.pack(fill=tk.X, ipady=7)
+            entry.pack(fill=tk.X, ipady=6)
 
             tk.Label(
                 body,
                 text=hint,
                 bg=SURFACE,
                 fg=SUBTEXT,
-                font=("Segoe UI", 7, "italic"),
+                font=("Segoe UI", 7),
                 anchor="w",
-            ).pack(fill=tk.X, pady=(2, 0))
+            ).pack(fill=tk.X, pady=(1, 0))
 
         # Live preview of the formatted headline
         preview_frame = tk.Frame(body, bg=SURFACE)
-        preview_frame.pack(fill=tk.X, pady=(14, 0))
+        preview_frame.pack(fill=tk.X, pady=(12, 0))
 
         tk.Label(
             preview_frame,
             text="HEADLINE PREVIEW",
             bg=SURFACE,
-            fg=SUBTEXT,
+            fg=ACCENT,
             font=("Segoe UI", 7, "bold"),
             anchor="w",
         ).pack(fill=tk.X, pady=(0, 4))
@@ -438,11 +520,13 @@ class JobApplicationAI:
             preview_frame,
             text="—",
             bg=SURFACE2,
-            fg=ACCENT,
-            font=("Segoe UI", 9, "bold"),
+            fg=SUCCESS,
+            font=("Segoe UI", 8),
             anchor="w",
             padx=10,
-            pady=6,
+            pady=7,
+            wraplength=280,
+            justify=tk.LEFT,
         )
         self._headline_preview.pack(fill=tk.X)
 
@@ -463,6 +547,104 @@ class JobApplicationAI:
         self.job_title_var.trace_add("write", _update_preview)
         self.tech_stack_var.trace_add("write", _update_preview)
 
+    # ── Skills section ─────────────────────────────────────────────────
+
+    def _build_skills_section(self, parent: tk.Frame) -> None:
+        """Skills section with checkboxes for missing skills from job circular."""
+        card = self._make_card(parent, "🔧  Missing Skills")
+        card.pack(fill=tk.X, pady=(0, 12))
+
+        body = tk.Frame(card, bg=SURFACE)
+        body.pack(fill=tk.X, padx=16, pady=(0, 16))
+
+        # Container for checkboxes (will be populated dynamically)
+        self.skills_container = tk.Frame(body, bg=SURFACE)
+        self.skills_container.pack(fill=tk.X)
+
+        # Initially empty message
+        self.skills_empty_msg = tk.Label(
+            self.skills_container,
+            text="Analyze a job posting to see missing skills",
+            bg=SURFACE,
+            fg=SUBTEXT,
+            font=("Segoe UI", 8),
+        )
+        self.skills_empty_msg.pack(fill=tk.X, pady=8)
+
+        # Store checkbox variables and skills data
+        self.skills_data = {}  # {skill_name: tk.BooleanVar}
+
+    def _populate_skills_section(self, job_skills: list[str]) -> None:
+        """
+        Populate skills section with checkboxes for missing skills.
+        
+        Args:
+            job_skills: List of skills extracted from job circular
+        """
+        # Get existing skills from resume
+        existing_skills = set()
+        if self.doc_editor:
+            existing = self.doc_editor.get_existing_skills()
+            existing_skills = set(s.lower() for s in existing)
+
+        # Find missing skills (not in resume)
+        missing_skills = []
+        for skill in job_skills:
+            if skill.lower() not in existing_skills:
+                missing_skills.append(skill)
+
+        # Clear previous checkboxes
+        for widget in self.skills_container.winfo_children():
+            widget.destroy()
+        self.skills_data.clear()
+
+        if not missing_skills:
+            msg = tk.Label(
+                self.skills_container,
+                text="✅ You already have all the skills from this job!",
+                bg=SURFACE,
+                fg=SUCCESS,
+                font=("Segoe UI", 8, "italic"),
+            )
+            msg.pack(fill=tk.X, pady=8)
+            return
+
+        # Create checkboxes for missing skills
+        for skill in missing_skills[:12]:  # Limit to 12 skills for UI space
+            var = tk.BooleanVar(value=False)
+            self.skills_data[skill] = var
+
+            check_frame = tk.Frame(self.skills_container, bg=SURFACE)
+            check_frame.pack(fill=tk.X, pady=2)
+
+            check = tk.Checkbutton(
+                check_frame,
+                text=skill,
+                variable=var,
+                bg=SURFACE,
+                fg=TEXT,
+                selectcolor=SURFACE2,
+                activebackground=SURFACE,
+                activeforeground=ACCENT,
+                font=("Segoe UI", 9),
+                highlightthickness=0,
+            )
+            check.pack(side=tk.LEFT)
+
+        if len(missing_skills) > 12:
+            more_msg = tk.Label(
+                self.skills_container,
+                text=f"… and {len(missing_skills) - 12} more",
+                bg=SURFACE,
+                fg=SUBTEXT,
+                font=("Segoe UI", 7, "italic"),
+            )
+            more_msg.pack(fill=tk.X, pady=4)
+
+    def _get_selected_skills(self) -> list[str]:
+        """Return list of skills that are checked."""
+        return [skill for skill, var in self.skills_data.items() if var.get()]
+
     # ── Action buttons ─────────────────────────────────────────────────
 
     def _build_action_buttons(self, parent: tk.Frame) -> None:
@@ -470,7 +652,7 @@ class JobApplicationAI:
         card.pack(fill=tk.X, pady=(0, 0))
 
         body = tk.Frame(card, bg=SURFACE)
-        body.pack(fill=tk.X, padx=14, pady=(0, 14))
+        body.pack(fill=tk.X, padx=16, pady=(0, 16))
 
         self.generate_btn = self._make_button(
             body,
@@ -478,40 +660,40 @@ class JobApplicationAI:
             self._on_generate_pdfs,
             primary=True,
         )
-        self.generate_btn.pack(fill=tk.X, pady=(0, 8))
+        self.generate_btn.pack(fill=tk.X, pady=(0, 10), ipady=2)
 
         self._make_button(
             body,
             "📁  Open Output Folder",
             self._on_open_output_folder,
-        ).pack(fill=tk.X, pady=(0, 8))
+        ).pack(fill=tk.X, pady=(0, 10), ipady=2)
 
         self._make_button(
             body,
-            "⚙  Settings",
+            "⚙️  Settings",
             self._on_settings,
-        ).pack(fill=tk.X)
+        ).pack(fill=tk.X, ipady=2)
 
     # ── Status bar ─────────────────────────────────────────────────────
 
     def _build_status_bar(self) -> None:
-        bar = tk.Frame(self.root, bg=SURFACE, height=30)
+        bar = tk.Frame(self.root, bg=SURFACE, height=36)
         bar.pack(fill=tk.X, side=tk.BOTTOM)
         bar.pack_propagate(False)
 
         # Coloured indicator dot
         self._status_dot = tk.Label(bar, text="●", bg=SURFACE, fg=SUBTEXT, font=("Segoe UI", 10))
-        self._status_dot.pack(side=tk.LEFT, padx=(10, 4))
+        self._status_dot.pack(side=tk.LEFT, padx=(16, 8), pady=8)
 
         self._status_var = tk.StringVar(value="Initialising…")
         tk.Label(
             bar,
             textvariable=self._status_var,
             bg=SURFACE,
-            fg=SUBTEXT,
-            font=("Segoe UI", 8),
+            fg=TEXT,
+            font=("Segoe UI", 9),
             anchor="w",
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 16), pady=8)
 
     # ──────────────────────────────────────────────────────────────────
     # Widget factory helpers
@@ -524,17 +706,20 @@ class JobApplicationAI:
         wrapper.pack_propagate(True)
 
         # Card title
+        title_frame = tk.Frame(wrapper, bg=SURFACE)
+        title_frame.pack(fill=tk.X, padx=16, pady=(14, 8))
+        
         tk.Label(
-            wrapper,
+            title_frame,
             text=title,
             bg=SURFACE,
             fg=TEXT,
             font=("Segoe UI", 10, "bold"),
             anchor="w",
-        ).pack(fill=tk.X, padx=14, pady=(12, 6))
+        ).pack(side=tk.LEFT)
 
         # Thin accent underline
-        tk.Frame(wrapper, bg=ACCENT, height=2).pack(fill=tk.X, padx=14, pady=(0, 8))
+        tk.Frame(wrapper, bg=ACCENT, height=1).pack(fill=tk.X, padx=16, pady=(0, 8))
 
         return wrapper
 
@@ -548,7 +733,7 @@ class JobApplicationAI:
     ) -> tk.Button:
         bg     = ACCENT   if primary else SURFACE2
         fg     = "white"
-        active = ACCENT2  if primary else BORDER
+        active = ACCENT2  if primary else ACCENT
 
         btn = tk.Button(
             parent,
@@ -561,14 +746,21 @@ class JobApplicationAI:
             relief=tk.FLAT,
             font=("Segoe UI", 9, "bold" if primary else "normal"),
             cursor="hand2",
-            padx=14,
-            pady=8,
+            padx=12,
+            pady=10,
             bd=0,
+            highlightthickness=0,
         )
 
-        # Hover effect
-        btn.bind("<Enter>", lambda _e, b=btn, a=active: b.config(bg=a))
-        btn.bind("<Leave>", lambda _e, b=btn, orig=bg: b.config(bg=orig))
+        # Hover effect with smooth transition
+        def _on_enter(event):
+            btn.config(bg=active)
+        
+        def _on_leave(event):
+            btn.config(bg=bg)
+
+        btn.bind("<Enter>", _on_enter)
+        btn.bind("<Leave>", _on_leave)
 
         return btn
 
@@ -589,14 +781,24 @@ class JobApplicationAI:
     # ──────────────────────────────────────────────────────────────────
 
     def _on_analyze(self) -> None:
-        """Analyze the pasted job circular with Claude."""
+        """Analyze the pasted job circular with comprehensive error handling."""
         raw = self.circular_text.get("1.0", tk.END).strip()
         placeholder = "Paste the full job description / advertisement here…"
 
         if not raw or raw == placeholder:
             messagebox.showwarning(
                 "HireMe AI",
-                "Please paste a job circular into the text area first.",
+                "Please paste a job posting into the text area first.\n\n"
+                "Copy a job description from a website (LinkedIn, job boards, etc.) "
+                "and paste it here.",
+            )
+            return
+        
+        if len(raw) < 50:
+            messagebox.showwarning(
+                "HireMe AI",
+                "Job posting is too short. Please paste a complete job description "
+                "(at least a few sentences).",
             )
             return
 
@@ -618,20 +820,45 @@ class JobApplicationAI:
 
         def _worker():
             try:
-                details = self.ai_engine.extract_job_details(raw)
-                # Update UI on the main thread
-                self.root.after(0, lambda: self._populate_fields(details))
+                # Extract job details with error handling
+                try:
+                    details = self.ai_engine.extract_job_details(raw)
+                    self.root.after(0, lambda: self._populate_fields(details))
+                except Exception as exc:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Analysis Failed",
+                        f"Could not extract job details:\n\n{exc}",
+                    ))
+                    self.root.after(0, lambda: self._set_status(
+                        f"Analysis failed", color=ERROR
+                    ))
+                    return
+                
+                # Extract skills (non-blocking failure)
+                try:
+                    skills = self.ai_engine.extract_skills(raw)
+                    self.root.after(0, lambda s=skills: self._populate_skills_section(s))
+                except Exception as e:
+                    # Log but don't show error - skills are optional
+                    print(f"[INFO] Skills extraction skipped: {e}")
+                
                 self.root.after(0, lambda: self._set_status(
-                    f"Analysis complete — review and edit the fields below",
+                    "✓ Analysis complete — review and edit fields below",
                     color=SUCCESS,
                 ))
             except Exception as exc:
-                self.root.after(0, lambda e=exc: messagebox.showerror(
-                    "Analysis Failed", str(e)
+                error_msg = str(exc)
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Analysis Error",
+                    f"Unexpected error during analysis:\n\n{error_msg}",
                 ))
                 self.root.after(0, lambda: self._set_status(
-                    f"Analysis failed — {exc}", color=ERROR
+                    "Analysis error", color=ERROR
                 ))
+                # Log the error
+                company = self.company_name_var.get() if hasattr(self, "company_name_var") else "Unknown"
+                role = self.role_var.get() if hasattr(self, "role_var") else "Unknown"
+                self.logger_manager.log_analysis(company, role, p_name, False)
             finally:
                 self.root.after(0, lambda: self.analyze_btn.config(state=tk.NORMAL))
                 self.root.after(0, lambda: self._analyze_progress.config(text=""))
@@ -668,53 +895,75 @@ class JobApplicationAI:
 
         self.job_title_var.set(formatted_title)
         self.tech_stack_var.set(tech)
-        self.company_name_var.set(details.get("company_name", ""))
-        self.role_var.set(details.get("role", ""))
+        company = details.get("company_name", "")
+        self.company_name_var.set(company)
+        role = details.get("role", "")
+        self.role_var.set(role)
         self.location_var.set(details.get("location", ""))
+        
+        # Save to history and log successful analysis
+        job_circular = self.circular_text.get("1.0", tk.END).strip()
+        self.history_manager.add_to_history(formatted_title, company, role, job_circular)
+        self.logger_manager.log_analysis(company, role, self.ai_engine.provider["name"], True)
 
     def _on_generate_pdfs(self) -> None:
-        """Edit DOCX templates and convert to PDF."""
+        """Edit DOCX templates and convert to PDF with comprehensive validation."""
         job_title    = self.job_title_var.get().strip()
         company_name = self.company_name_var.get().strip()
         role         = self.role_var.get().strip()
         location     = self.location_var.get().strip()
 
-        # Handle missing fields with fallbacks
+        # Validate minimum required fields
         if not job_title:
-            job_title = role if role else "Software Developer"
-            self.job_title_var.set(job_title)
+            messagebox.showwarning(
+                "Missing Information",
+                "Job Title is required. Please enter a job title or analyze a job posting first.",
+            )
+            return
+        
         if not company_name:
-            company_name = "your company"
-            self.company_name_var.set(company_name)
+            messagebox.showwarning(
+                "Missing Information",
+                "Company Name is required. Please enter a company name.",
+            )
+            return
+        
         if not role:
-            role = "the role"
-            self.role_var.set(role)
-        if not location:
-            location = ""
-            self.location_var.set(location)
+            messagebox.showwarning(
+                "Missing Information",
+                "Role is required. Please enter the job role.",
+            )
+            return
 
+        # Check engines are ready
         if self.doc_editor is None:
             messagebox.showerror(
-                "HireMe AI",
-                "Document editor is not ready.\n\n"
-                "Check that resume.docx and cv.docx exist in the template folder "
-                "(Settings → Template Folder).",
+                "Configuration Error",
+                "Document templates are not ready.\n\n"
+                "Make sure:\n"
+                "• resume.docx and cv.docx exist in your template folder\n"
+                "• Template folder path is set in Settings\n\n"
+                "Run 'python setup_templates.py' if templates are missing.",
             )
             return
 
         if self.pdf_converter is None:
             messagebox.showerror(
-                "HireMe AI",
-                "PDF converter is not ready.\n\n"
-                "Check the LibreOffice path in Settings.",
+                "Configuration Error",
+                "PDF converter (LibreOffice) is not ready.\n\n"
+                "Make sure:\n"
+                "• LibreOffice is installed\n"
+                "• LibreOffice path is correct in Settings\n\n"
+                "Download from: https://www.libreoffice.org/",
             )
             return
 
         output_folder = self.config.get("output_folder", "").strip()
         if not output_folder:
             messagebox.showerror(
-                "HireMe AI",
-                "Output folder is not configured.\n\nOpen Settings and set an output folder.",
+                "Configuration Error",
+                "Output folder is not configured.\n\n"
+                "Open Settings and set an output folder for generated PDFs.",
             )
             return
 
@@ -732,48 +981,76 @@ class JobApplicationAI:
                 cv_tmp     = tmp_dir / "cv_temp.docx"
 
                 # Step 1 — Edit DOCX templates
-                self.root.after(0, lambda: self._set_status(
-                    "Step 1 / 3 — Editing DOCX templates…", color=ACCENT
-                ))
-                self.doc_editor.edit_resume(job_title, str(resume_tmp), role=role)
-                self.doc_editor.edit_cv(company_name, role, location, str(cv_tmp), job_title=job_title)
-
+                try:
+                    self.root.after(0, lambda: self._set_status(
+                        "Step 1/3 — Editing templates…", color=ACCENT
+                    ))
+                    self.doc_editor.edit_resume(job_title, str(resume_tmp), role=role)
+                    self.doc_editor.edit_cv(company_name, role, location, str(cv_tmp), job_title=job_title)
+                except Exception as e:
+                    self.root.after(0, lambda e=e: messagebox.showerror(
+                        "Template Error",
+                        f"Could not edit templates:\n\n{e}",
+                    ))
+                    return
+                
                 # Step 2 — Convert to PDF
-                self.root.after(0, lambda: self._set_status(
-                    "Step 2 / 3 — Converting to PDF via LibreOffice…", color=ACCENT
-                ))
-                resume_pdf, cv_pdf = self.pdf_converter.generate_pdfs(
-                    str(resume_tmp),
-                    str(cv_tmp),
-                    safe_company,
-                    output_folder,
-                    role=role,
-                )
+                try:
+                    self.root.after(0, lambda: self._set_status(
+                        "Step 2/3 — Converting to PDF…", color=ACCENT
+                    ))
+                    resume_pdf, cv_pdf = self.pdf_converter.generate_pdfs(
+                        str(resume_tmp),
+                        str(cv_tmp),
+                        safe_company,
+                        output_folder,
+                        role=role,
+                        applicant_name=self.config.get("applicant_name", "Applicant")
+                    )
+                except Exception as e:
+                    self.root.after(0, lambda e=e: messagebox.showerror(
+                        "PDF Conversion Error",
+                        f"Could not convert to PDF:\n\n{e}",
+                    ))
+                    return
 
                 # Step 3 — Done
+                subfolder_name = resume_pdf.parent.name
                 self.root.after(0, lambda: self._set_status(
-                    f"✅  PDFs created: {resume_pdf.name}  &  {cv_pdf.name}",
+                    f"✓ PDFs created successfully",
                     color=SUCCESS,
                 ))
                 self.root.after(0, lambda: messagebox.showinfo(
-                    "PDFs Created Successfully",
-                    f"Your application documents are ready:\n\n"
-                    f"  📄  {resume_pdf.name}\n"
-                    f"  📄  {cv_pdf.name}\n\n"
-                    f"Saved to:\n  {output_folder}",
+                    "Success!",
+                    f"Your PDFs are ready:\n\n"
+                    f"  • {resume_pdf.name}\n"
+                    f"  • {cv_pdf.name}\n\n"
+                    f"Location:\n{subfolder_name}\n\n"
+                    f"Click 'Open Output Folder' to view.",
                 ))
-
+                
+                # Log successful generation and clear draft
+                self.logger_manager.log_generation(company_name, role, 2, True)
+                self.history_manager.clear_draft()
             except Exception as exc:
+                error_trace = traceback.format_exc()
+                print(f"[ERROR] PDF generation failed:\n{error_trace}")
                 self.root.after(0, lambda e=exc: messagebox.showerror(
-                    "PDF Generation Failed", str(e)
+                    "Unexpected Error",
+                    f"Something went wrong:\n\n{e}",
                 ))
-                self.root.after(0, lambda e=exc: self._set_status(
-                    f"Error: {e}", color=ERROR
+                self.root.after(0, lambda: self._set_status(
+                    "PDF generation failed", color=ERROR
                 ))
+                # Log failed generation
+                self.logger_manager.log_generation(company_name, role, 0, False)
             finally:
-                # Clean up temp directory (DOCX files already deleted by pdf_converter)
+                # Clean up temp directory
                 if tmp_dir and tmp_dir.exists():
-                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    try:
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                    except Exception:
+                        pass  # Ignore cleanup errors
                 self.root.after(0, lambda: self.generate_btn.config(state=tk.NORMAL))
 
         threading.Thread(target=_worker, daemon=True).start()

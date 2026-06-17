@@ -8,6 +8,7 @@ Provides a "Test AI Connection" button for all providers.
 """
 
 import json
+import os
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -182,9 +183,20 @@ class SettingsWindow(tk.Toplevel):
             )
             self._current_row += 3
 
+        tk.Label(body, text="👤  USER PROFILE", bg=self._BG, fg=self._ACCENT, font=("Segoe UI", 9, "bold")).grid(row=self._current_row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self._current_row += 1
+        field("APPLICANT NAME", "applicant_name")
+        field("APPLICANT EMAIL", "applicant_email")
+        field("APPLICANT PHONE", "applicant_phone")
+        
+        tk.Label(body, text="📂  DIRECTORIES", bg=self._BG, fg=self._ACCENT, font=("Segoe UI", 9, "bold")).grid(row=self._current_row, column=0, columnspan=3, sticky="w", pady=(12, 4))
+        self._current_row += 1
         field("TEMPLATE FOLDER", "template_folder", browse_type="folder")
         field("OUTPUT FOLDER",   "output_folder",   browse_type="folder")
         field("LIBREOFFICE PATH (soffice.exe)", "libreoffice_path", browse_type="exe")
+        
+        tk.Label(body, text="🤖  AI PROVIDERS", bg=self._BG, fg=self._ACCENT, font=("Segoe UI", 9, "bold")).grid(row=self._current_row, column=0, columnspan=3, sticky="w", pady=(12, 4))
+        self._current_row += 1
 
         # Add fields for all AI Providers
         for p_id in PROVIDER_ORDER:
@@ -283,6 +295,38 @@ class SettingsWindow(tk.Toplevel):
     # Browse helpers                                                       #
     # ------------------------------------------------------------------ #
 
+    def _validate_folder(self, path: str) -> str:
+        """Validate that a folder path exists and is readable. Returns cleaned path or empty string."""
+        if not path or not path.strip():
+            return ""
+        
+        p = Path(path.strip())
+        if not p.exists():
+            return ""  # Path doesn't exist
+        if not p.is_dir():
+            return ""  # Path is not a directory
+        if not os.access(p, os.R_OK):
+            return ""  # Not readable
+        
+        return str(p)
+    
+    def _validate_exe(self, path: str) -> str:
+        """Validate that an exe path exists and is readable. Returns cleaned path or empty string."""
+        if not path or not path.strip():
+            return ""
+        
+        p = Path(path.strip())
+        if not p.exists():
+            return ""  # File doesn't exist
+        if not p.is_file():
+            return ""  # Path is not a file
+        if not p.suffix.lower() == ".exe":
+            return ""  # Not an EXE file
+        if not os.access(p, os.R_OK | os.X_OK):
+            return ""  # Not executable
+        
+        return str(p)
+
     def _browse(self, browse_type: str, var: tk.StringVar) -> None:
         if browse_type == "folder":
             path = filedialog.askdirectory(
@@ -329,6 +373,9 @@ class SettingsWindow(tk.Toplevel):
             return
 
         data = {
+            "applicant_name": self._vars.get("applicant_name", tk.StringVar()).get().strip(),
+            "applicant_email": self._vars.get("applicant_email", tk.StringVar()).get().strip(),
+            "applicant_phone": self._vars.get("applicant_phone", tk.StringVar()).get().strip(),
             "template_folder": template_folder,
             "output_folder":   output_folder,
             "libreoffice_path": libreoffice,

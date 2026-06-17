@@ -21,6 +21,9 @@ HireMe AI is a **Windows desktop application** that automates job application wo
 | 📁 **Timestamped Organization** | Each application saved in unique folders with millisecond precision: `Company_Role_YYYY-MM-DD_HH-MM-SS-mmm` |
 | 🎯 **Smart Role Cleaning** | Removes seniority qualifiers (Senior/Junior/Intern) from filenames for clean, professional organization |
 | ⚙️ **Persistent Config** | All settings (paths, API keys) stored in `config.json` — survive app restarts |
+| 💾 **Autosave & Recovery** | Automatically saves draft every 30 seconds and recovers if closed accidentally |
+| 🕒 **Job History** | Keeps history of the last 20 analyzed jobs for quick reloading |
+| 📝 **Comprehensive Logging** | Application activity logged for easy auditing and debugging |
 | 📦 **Standalone EXE** | Single executable — no Python required on user's PC |
 | 🌍 **Multi-language** | Handles job circulars in English, Bengali, or any language with AI translation
 
@@ -401,8 +404,13 @@ JobApplicationAI/
 ├── 📄 pdf_converter.py           # LibreOffice PDF conversion
 ├── 📄 settings_window.py         # Settings dialog
 ├── 📄 setup_templates.py         # Generate sample templates
+├── 📄 history_manager.py         # Auto-save and history tracking
+├── 📄 logger_manager.py          # Application logging
 │
 ├── 📋 config.json                # Configuration (paths, API keys)
+├── 📋 .history.json              # Saved job analysis history
+├── 📋 .draft.json                # Temporary autosave draft
+├── 📁 app_logs/                  # Timestamped application logs
 ├── 📋 requirements.txt           # Python dependencies
 ├── 📋 README.md                  # This file
 ├── 🎨 HireMe_AI.spec             # PyInstaller config
@@ -837,6 +845,8 @@ Docker · AWS
 | `pdf_converter.py` | **PDF Generation** | Calls LibreOffice, converts DOCX→PDF, renames files |
 | `settings_window.py` | **Settings Dialog** | Config UI, saves to config.json |
 | `setup_templates.py` | **Template Generator** | Creates sample resume.docx & cv.docx |
+| `history_manager.py` | **History & Drafts** | Auto-saves form data, recovers drafts, tracks job history |
+| `logger_manager.py` | **Logging System** | Writes application events to log files for debugging |
 
 ### **Configuration & Build**
 

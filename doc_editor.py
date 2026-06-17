@@ -25,6 +25,30 @@ from docx.oxml.ns import qn
 import re
 
 
+def clean_role_name(role: str) -> str:
+    """
+    Remove seniority qualifiers from role names to ensure consistent,
+    professional filenames.
+    """
+    if not role:
+        return ""
+        
+    qualifiers = [
+        r'\b(?:senior|junior|intern|lead|principal|chief|staff|head\s+of|associate|assistant)\b',
+        r'\b(?:sr\.?|jr\.?)\b',
+        r'\b(?:entry[- ]level|mid[- ]level|upper[- ]level|executive)\b'
+    ]
+    
+    cleaned = role
+    for q in qualifiers:
+        cleaned = re.sub(q, '', cleaned, flags=re.IGNORECASE)
+    
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    cleaned = re.sub(r'^[-\s,]+|[-\s,]+$', '', cleaned)
+    
+    return cleaned.strip() or role.strip()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -457,7 +481,6 @@ class DocEditor:
                 "[Company Address or Remote]": location,
                 "{{DATE}}": current_date,
                 "[Date]": current_date,
-                "April 25, 2026": current_date,
                 # Job title placeholders in the CV header
                 "{{JOB_TITLE}}": effective_job_title,
                 "[Job Title]": effective_job_title,

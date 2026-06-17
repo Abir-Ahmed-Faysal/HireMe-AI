@@ -83,8 +83,7 @@ mkdir JobApplicationAI_Distribution
 ```
 JobApplicationAI_Distribution/
 ├── JobApplicationAI.exe          (from dist/)
-├── README.md                     (quick reference)
-├── QUICK_START.md               (for first use)
+├── README.md                     (overview)
 ├── SETUP_GUIDE.md               (detailed setup)
 ├── FIRST_RUN.md                 (new file - see below)
 └── templates/
@@ -162,7 +161,6 @@ Repeat for templates/cv.docx with `{{COMPANY_NAME}}` and `{{ROLE}}`
 
 See included documentation:
 - README.md - Overview and features
-- QUICK_START.md - Common tasks
 - SETUP_GUIDE.md - Detailed setup help
 ```
 
@@ -451,7 +449,6 @@ mkdir JobApplicationAI_Distribution
 # Copy files
 copy dist\JobApplicationAI.exe JobApplicationAI_Distribution\
 copy README.md JobApplicationAI_Distribution\
-copy QUICK_START.md JobApplicationAI_Distribution\
 copy SETUP_GUIDE.md JobApplicationAI_Distribution\
 copy templates\*.docx JobApplicationAI_Distribution\templates\
 
