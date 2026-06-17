@@ -593,8 +593,6 @@ class JobApplicationAI:
         self.skills_empty_msg.pack(fill=tk.X, pady=8)
 
         # ── Manual add row ───────────────────────────────────────────────
-        add_frame = tk.Frame(body if False else card, bg=SURFACE)
-        # re-pack under the card properly:
         add_frame = tk.Frame(card, bg=SURFACE)
         add_frame.pack(fill=tk.X, padx=16, pady=(4, 12))
 
@@ -1113,8 +1111,6 @@ class JobApplicationAI:
                             "\n\nTip: Open resume.docx, find the Skills section "
                             "and add them there.",
                         ))
-                    _ = (  # dummy to close the tuple
-                    )
                 except Exception as e:
                     self.root.after(0, lambda e=e: messagebox.showerror(
                         "PDF Conversion Error",
