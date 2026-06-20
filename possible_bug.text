@@ -1,0 +1,9 @@
+Bugs found in your project(possible not sure bug):
+1. main.py:341 — bind_all steals all mousewheel events. Scrolling the left panel or skills section will also scroll the right panel simultaneously. Very bad UX.
+2. pdf_converter.py:219-249 — Dead docstring block mid-function. 30-line orphaned string inside generate_pdfs that does nothing.
+3. settings_window.py:269-272 — Combobox shows provider IDs instead of names. Dropdown shows "claude" instead of "Claude". The provider_options dict is computed but never used.
+4. main.py:538 — _TECH_STACK_ROLES used 400+ lines before its definition (line 962). Works at runtime but confusing to read/maintain.
+5. pdf_converter.py:192-258 — Duplicate input validation. Same file existence checks done twice.
+6. build.bat — Templates folder not packaged. The built .exe won't have resume.docx/cv.docx shipped alongside it.
+7. ai_engine.py:277 — extract_skills has no retry logic unlike extract_job_details which retries 3 times.
+8. settings_window.py:141 — Mousewheel only works on window frame, not on child widgets (inputs, etc.).

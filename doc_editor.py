@@ -50,6 +50,105 @@ def clean_role_name(role: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Skill Categorization
+# ---------------------------------------------------------------------------
+
+SKILL_CATEGORIES = {
+    "Frontend": [
+        "TypeScript", "React", "React.js", "Vue", "Vue.js", "Angular", "Svelte",
+        "JavaScript", "JSX", "Next.js", "Gatsby", "Remix", "Nuxt", 
+        "Tailwind", "Tailwind CSS", "Bootstrap", "Material UI", "Shadcn",
+        "CSS", "SCSS", "LESS", "Sass", "Styled Components", "Emotion",
+        "HTML", "HTML5", "WebGL", "Canvas", "SVG",
+        "Redux", "Zustand", "Context", "Jotai", "Recoil",
+        "Framer Motion", "Three.js", "D3.js", "Chart.js", "Visx"
+    ],
+    "Backend": [
+        "Node.js", "Node", "Express", "Express.js", "NestJS", "Fastify",
+        "Django", "Flask", "FastAPI", "Python", "Go", "Rust", "Java",
+        "MongoDB", "PostgreSQL", "MySQL", "MariaDB", "SQLite", "Oracle",
+        "Redis", "Memcached", "Elasticsearch", "Cassandra",
+        "Prisma", "Sequelize", "TypeORM", "SQLAlchemy", "Hibernate",
+        "GraphQL", "Apollo", "REST API", "REST", "SOAP",
+        "Socket.io", "WebSocket", "tRPC", "gRPC",
+        "Microservices", "Monolithic", "Serverless", "Lambda"
+    ],
+    "Auth": [
+        "JWT", "OAuth", "OAuth2", "OpenID", "SAML",
+        "Firebase Auth", "Firebase", "Better Auth", "NextAuth", "NextAuth.js",
+        "Passport.js", "Passport", "Auth0", "Okta", "Cognito",
+        "Session", "Cookies", "Token", "Two-Factor Auth", "MFA", "2FA",
+        "Bcrypt", "Argon2", "PBKDF2"
+    ],
+    "Tools": [
+        "Docker", "Docker Compose", "Kubernetes", "K8s",
+        "Git", "GitHub", "GitLab", "Bitbucket", "SVN",
+        "AWS", "Azure", "Google Cloud", "GCP", "Heroku", "Vercel", "Netlify",
+        "Jenkins", "GitHub Actions", "GitLab CI", "CircleCI", "Travis CI",
+        "Postman", "Insomnia", "Thunder Client", "REST Client",
+        "Figma", "Adobe XD", "Sketch", "InVision",
+        "Jira", "Trello", "Asana", "Monday.com",
+        "Linux", "Unix", "Windows Server", "macOS",
+        "Nginx", "Apache", "IIS",
+        "Webpack", "Vite", "Parcel", "Rollup", "Esbuild",
+        "NPM", "Yarn", "PNPM", "Bun"
+    ]
+}
+
+def _categorize_skills(skills: list[str]) -> dict:
+    """
+    Categorize a list of skills into Frontend, Backend, Auth, and Tools.
+    
+    Args:
+        skills: List of skill names
+    
+    Returns:
+        Dict with categories as keys and comma-separated skills as values
+    """
+    categorized = {
+        "Frontend": [],
+        "Backend": [],
+        "Auth": [],
+        "Tools": []
+    }
+    
+    for skill in skills:
+        skill_lower = skill.lower()
+        found = False
+        
+        for category, skill_list in SKILL_CATEGORIES.items():
+            for cat_skill in skill_list:
+                if skill_lower == cat_skill.lower():
+                    categorized[category].append(skill)
+                    found = True
+                    break
+            if found:
+                break
+        
+        # If not found in any category, add to Tools (default)
+        if not found:
+            categorized["Tools"].append(skill)
+    
+    # Format as comma-separated strings, empty string if no skills
+    result = {}
+    for category, skills_list in categorized.items():
+        if skills_list:
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_skills = []
+            for s in skills_list:
+                s_lower = s.lower()
+                if s_lower not in seen:
+                    unique_skills.append(s)
+                    seen.add(s_lower)
+            result[category] = ", " + ", ".join(unique_skills)
+        else:
+            result[category] = ""
+    
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -167,7 +266,9 @@ def _iter_text_box_paragraphs(doc_or_header):
     p_tag    = f"{{{W_NS}}}p"
 
     # Document exposes .element; _Header/_Footer expose ._element
-    root_elem = getattr(doc_or_header, "element", None) or getattr(doc_or_header, "_element", None)
+    root_elem = getattr(doc_or_header, "element", None)
+    if root_elem is None:
+        root_elem = getattr(doc_or_header, "_element", None)
     if root_elem is None:
         return
 
@@ -519,3 +620,51 @@ class DocEditor:
             raise
         except Exception as e:
             raise Exception(f"Error editing cv.docx: {e}") from e
+
+    def add_skills_to_resume(self, output_path: str, selected_skills: list[str]) -> str:
+        """
+        Add dynamically selected skills to the resume template.
+        
+        This method:
+        1. Categorizes selected skills into Frontend, Backend, Auth, Tools
+        2. Adds them to the corresponding skill subsections in the resume
+        3. Preserves existing formatting and structure
+        
+        Args:
+            output_path: Path where the resume was already saved (edit_resume call)
+            selected_skills: List of skill names to add (from user checkboxes + manual)
+        
+        Returns:
+            output_path (str)
+        
+        Raises:
+            Exception: If skill placeholders not found or document error
+        """
+        if not selected_skills:
+            # No skills to add, document already saved
+            return output_path
+        
+        try:
+            doc = Document(output_path)
+            
+            # Categorize the selected skills
+            categorized = _categorize_skills(selected_skills)
+            
+            # Build replacements dict with placeholders
+            replacements = {
+                "{{frontend_skills}}": categorized["Frontend"],
+                "{{backend_skills}}": categorized["Backend"],
+                "{{auth_skills}}": categorized["Auth"],
+                "{{tools_skills}}": categorized["Tools"],
+            }
+            
+            # Only keep non-empty replacements to avoid adding empty commas
+            replacements = {k: v for k, v in replacements.items() if v}
+            
+            # Replace placeholders in document
+            _replace_in_document(doc, replacements)
+            doc.save(output_path)
+            
+            return output_path
+        except Exception as e:
+            raise Exception(f"Error adding skills to resume: {e}") from e

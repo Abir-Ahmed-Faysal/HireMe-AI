@@ -297,9 +297,10 @@ class PDFConverter:
         clean_applicant = re.sub(r"[\s]+", "_", clean_applicant)
         clean_applicant = clean_applicant or "Applicant"
         
-        # ---- Rename to final names ----
-        resume_final = out_dir / f"{clean_applicant}_Resume_{clean_role_slug}.pdf"
-        cv_final     = out_dir / f"{clean_applicant}_CoverLetter_{clean_role_slug}.pdf"
+        # ---- Rename to final names (ATS-friendly format) ----
+        # Format: Resume_[role]_[applicant_name].pdf and CV_[role]_[applicant_name].pdf
+        resume_final = out_dir / f"Resume_{clean_role_slug}_{clean_applicant}.pdf"
+        cv_final     = out_dir / f"CV_{clean_role_slug}_{clean_applicant}.pdf"
 
         # Rename LibreOffice-generated PDFs to final names
         shutil.move(str(resume_pdf_tmp), str(resume_final))

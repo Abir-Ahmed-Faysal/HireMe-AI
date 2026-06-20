@@ -1080,6 +1080,10 @@ class JobApplicationAI:
                     selected_skills = self._get_selected_skills()
                     self.doc_editor.edit_resume(job_title, str(resume_tmp), role=role)
                     self.doc_editor.edit_cv(company_name, role, location, str(cv_tmp), job_title=job_title)
+                    
+                    # ── Add selected skills to resume ──
+                    if selected_skills:
+                        self.doc_editor.add_skills_to_resume(str(resume_tmp), selected_skills)
                 except Exception as e:
                     self.root.after(0, lambda e=e: messagebox.showerror(
                         "Template Error",
@@ -1100,16 +1104,14 @@ class JobApplicationAI:
                         role=role,
                         applicant_name=self.config.get("applicant_name", "Applicant"),
                     )
-                    # ── Skills reminder popup ────────────────────────────
+                    # ── Skills automatically added ────────────────────────
                     if selected_skills:
-                        skills_list = "\n".join(f"  • {s}" for s in selected_skills)
+                        skills_list = "\n".join(f"  ✓ {s}" for s in selected_skills)
                         self.root.after(0, lambda sl=skills_list: messagebox.showinfo(
-                            "📌  Skills to Add Manually",
-                            "PDFs generated! Remember to manually add these "
-                            "selected skills to your resume.docx:\n\n"
+                            "✅ Skills Added Successfully",
+                            "Great! The following skills have been automatically added to your resume:\n\n"
                             + sl +
-                            "\n\nTip: Open resume.docx, find the Skills section "
-                            "and add them there.",
+                            "\n\nThey're now in the relevant subsections (Frontend, Backend, Auth, Tools).",
                         ))
                 except Exception as e:
                     self.root.after(0, lambda e=e: messagebox.showerror(
